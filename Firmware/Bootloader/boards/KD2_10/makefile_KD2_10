@@ -1,0 +1,39 @@
+$(OUTPUT_DIRECTORY)/KD2_10.out: \
+  LINKER_SCRIPT  := boards/$(MAKECMDGOALS)/helen_bootloader_nrf52.ld
+
+# board specific source files
+SRC_FILES += \
+  boards/KD2_10/KD2_10.c \
+  $(SDK_ROOT)/modules/nrfx/mdk/system_nrf52.c \
+  $(SDK_ROOT)/modules/nrfx/mdk/gcc_startup_nrf52.S \
+
+# board specific include folders
+INC_FOLDERS += \
+  boards/KD2_10 \
+  $(SDK_ROOT)/components/softdevice/s132/headers \
+  $(SDK_ROOT)/components/softdevice/s132/headers/nrf52 \
+
+# board specific libraries
+LIB_FILES += \
+
+# board specific C flags
+CFLAGS += -DFLOAT_ABI_HARD
+CFLAGS += -DNRF52
+CFLAGS += -DNRF52832_XXAA
+CFLAGS += -DS132
+CFLAGS += -mfloat-abi=hard -mfpu=fpv4-sp-d16
+CFLAGS += -D__HEAP_SIZE=0
+#CFLAGS += -D__STACK_SIZE=8192
+
+# board specific assembler flags
+ASMFLAGS += -mfloat-abi=hard -mfpu=fpv4-sp-d16
+ASMFLAGS += -DFLOAT_ABI_HARD
+ASMFLAGS += -DNRF52
+ASMFLAGS += -DNRF52832_XXAA
+ASMFLAGS += -DS132
+ASMFLAGS += -D__HEAP_SIZE=0
+#ASMFLAGS += -D__STACK_SIZE=8192
+
+# Linker flags
+LDFLAGS += -mfloat-abi=hard -mfpu=fpv4-sp-d16
+

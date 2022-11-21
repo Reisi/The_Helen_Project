@@ -1,0 +1,77 @@
+$(OUTPUT_DIRECTORY)/KD2_10.out: \
+  LINKER_SCRIPT  := boards/$(MAKECMDGOALS)/helen_nrf52.ld
+
+# board specific source files
+SRC_FILES += \
+  boards/KD2_10/KD2_10.c \
+  boards/KD2_10/KD2_hmi.c \
+  boards/KD2_10/KD2_adc.c \
+  boards/KD2_10/KD2_pwm.c \
+  boards/KD2_10/KD2_curr.c \
+  boards/KD2_10/bmi160drv.c \
+  boards/KD2_10/dbg_cmd_calib.c \
+  boards/KD2_10/i2c/i2c.c \
+  boards/KD2_10/ext/bosch/BMI160_driver/bmi160.c \
+  boards/helena_base_driver.c \
+  util/regulator.c \
+  util/filter.c \
+  util/limiter.c \
+  util/pitch_reg.c \
+  $(SDK_ROOT)/modules/nrfx/mdk/system_nrf52.c \
+  $(SDK_ROOT)/modules/nrfx/mdk/gcc_startup_nrf52.S \
+  $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_ppi.c \
+  $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_temp.c \
+  $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_rtc.c \
+  $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_pwm.c \
+  $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_saadc.c \
+  $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_twim.c \
+  $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_spim.c \
+  $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_nvmc.c \
+
+ifeq ($(TYPE),DEBUG)
+SRC_FILES += \
+  boards/KD2_10/dbg_cmd_calib.c
+endif
+
+# board specific include folders
+INC_FOLDERS += \
+  boards/KD2_10 \
+  boards/KD2_10/i2c \
+  boards/KD2_10/ext/bosch/BMI160_driver \
+  boards/KD2_10/ext/bosch/BSXlite_v1.0.2 \
+  util \
+  $(SDK_ROOT)/components/softdevice/s132/headers/nrf52 \
+  $(SDK_ROOT)/components/libraries/delay \
+
+# board specific libraries
+LIB_FILES += \
+  boards/KD2_10/ext/bosch/BSXlite_v1.0.2/lib/GCC_OUT/libalgobsxm4hardFP/libalgobsx.a \
+  $(SDK_ROOT)/components/toolchain/cmsis/dsp/GCC/libarm_cortexM4lf_math.a \
+
+# board specific C flags
+CFLAGS += -DARM_MATH_CM4
+CFLAGS += -DFLOAT_ABI_HARD
+CFLAGS += -DNRF52
+CFLAGS += -DNRF52832_XXAA
+CFLAGS += -DS132
+CFLAGS += -DNRFX_SAADC_API_V2
+CFLAGS += -mfloat-abi=hard -mfpu=fpv4-sp-d16
+CFLAGS += -D__HEAP_SIZE=8192
+CFLAGS += -D__STACK_SIZE=8192
+CFLAGS += -DSEGGER_RTT_SECTION='".noinit"'
+CFLAGS += -DSEGGER_RTT_BUFFER_SECTION='".noinit"'
+#CFLAGS += -DSEGGER_RTT_IN_RAM=1
+
+# board specific assembler flags
+ASMFLAGS += -mfloat-abi=hard -mfpu=fpv4-sp-d16
+ASMFLAGS += -DARM_MATH_CM4
+ASMFLAGS += -DFLOAT_ABI_HARD
+ASMFLAGS += -DNRF52
+ASMFLAGS += -DNRF52832_XXAA
+ASMFLAGS += -DS132
+ASMFLAGS += -D__HEAP_SIZE=8192
+ASMFLAGS += -D__STACK_SIZE=8192
+
+# Linker flags
+LDFLAGS += -mfloat-abi=hard -mfpu=fpv4-sp-d16
+
