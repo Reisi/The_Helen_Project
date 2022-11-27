@@ -15,3 +15,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ### Known Issues
 - instable regulator at low currents -> visible flickering
 - voltage limiter has delay
+- temperature limiter overshoots

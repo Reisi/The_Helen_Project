@@ -42,7 +42,7 @@
 
 #define DITHERING_BITS  2           // enhance pwm resolution with additional 2bit trough dithering
 
-#define MIN_REG_LIMIT   (4 << 8)    // minimal possible regulation limit, below this limit the
+#define MIN_REG_LIMIT   (5 << 8)    // minimal possible regulation limit, below this limit the
                                     // quiescent current of the current measurement circuit results in flickering
 
 /* Private defines -----------------------------------------------------------*/
@@ -188,8 +188,8 @@ static void initRegulators()
     reg_piInit_t piInit =
     {
         .gainProp      = 268435456,   // 0.125
-        .gainInt       = 134217728,   // 0.0625
-        .intUpperLimit = 1048576,     // 65535 / 0.0625
+        .gainInt       = 128849019,   // 0.06 (134217728,   // 0.0625)
+        .intUpperLimit = 1092250,     // 65535 / 0.06
         .intLowerLimit = 0,
     };
 

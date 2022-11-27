@@ -535,7 +535,13 @@ static ret_code_t advertisingInit(lm_init_t const* pInit)
         NRF_LOG_ERROR("advertising initialization error %d", errCode);
     }
 
-    ble_advertising_conn_cfg_tag_set(&advInst,APP_BLE_CONN_CFG_TAG);
+    ble_advertising_conn_cfg_tag_set(&advInst, APP_BLE_CONN_CFG_TAG);
+
+    errCode = sd_ble_gap_tx_power_set(BLE_GAP_TX_POWER_ROLE_ADV, advInst.adv_handle, 4);
+    if (errCode != NRF_SUCCESS)
+    {
+        NRF_LOG_ERROR("setting advertising power error %d", errCode);
+    }
 
     return errCode;
 }
@@ -755,12 +761,17 @@ static void onConnected(uint16_t connHandle, ble_gap_evt_connected_t const* pCon
 {
     uint8_t role = ble_conn_state_role(connHandle);
     lm_evt_t evt = {0};
+    uint32_t errCode;
 
     evt.type = LM_EVT_CONNECTED;
     evt.evt.conn.connHandle = connHandle;
     evt.evt.conn.role = role;
 
-
+    errCode = sd_ble_gap_tx_power_set(BLE_GAP_TX_POWER_ROLE_CONN, connHandle, 4);
+    if (errCode != NRF_SUCCESS)
+    {
+        NRF_LOG_ERROR("setting connection power error %d", errCode);
+    }
 
     if (role == BLE_GAP_ROLE_CENTRAL)
     {
@@ -769,7 +780,7 @@ static void onConnected(uint16_t connHandle, ble_gap_evt_connected_t const* pCon
         (void)pm_conn_sec_status_get(connHandle, &connStatus);
         if (!connStatus.bonded)
         {
-            uint32_t errCode = pm_conn_secure(connHandle, false);
+            errCode = pm_conn_secure(connHandle, false);
             if (errCode != NRF_SUCCESS)
             {
                 NRF_LOG_WARNING("link secure failed, error %d", errCode);

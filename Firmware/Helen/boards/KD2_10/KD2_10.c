@@ -1305,10 +1305,6 @@ ret_code_t brd_Init(brd_info_t const* *pInfo)
     if (errCode != NRF_SUCCESS && errCode != FDS_ERR_NOT_FOUND)
         return errCode;
 
-    config.optic[CHANNEL_PWM].type = PRG_TYPE_30;
-    channels.pwm[2].intensity = 10;
-    channels.pwm[2].mode = CHMODE_PITCH;
-
     setFeatures(&features, backsideAssembled, bmiAddr, helenaAddr);
 
     return NRF_SUCCESS;

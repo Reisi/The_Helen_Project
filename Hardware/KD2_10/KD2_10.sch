@@ -641,7 +641,7 @@ L Device:D_Zener D5
 U 1 1 61EE1537
 P 1500 7150
 F 0 "D5" V 1454 7230 50  0000 L CNN
-F 1 "18V" V 1545 7230 50  0000 L CNN
+F 1 "5V6" V 1545 7230 50  0000 L CNN
 F 2 "Diode_SMD:D_SOT-23_ANK" H 1500 7150 50  0001 C CNN
 F 3 "~" H 1500 7150 50  0001 C CNN
 F 4 "SOT-23-3" H 1500 7150 50  0001 C CNN "JLC"
@@ -1468,4 +1468,8 @@ Wire Notes Line
 	5550 3800 5500 3800
 Wire Notes Line
 	5500 3800 5300 4500
+Text Notes 1450 7650 0    50   ~ 0
+replace D5 with 18V diode\n(to use pin also as PWM output)
+Text Notes 9550 5950 0    50   ~ 0
+replace R6 with 680 Ohm\n(ADC is too close to its maximum)
 $EndSCHEMATC

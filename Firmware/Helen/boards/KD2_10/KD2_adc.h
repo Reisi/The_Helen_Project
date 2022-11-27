@@ -53,9 +53,9 @@ typedef struct
 
 // the default current gain factor to convert the raw adc output to q3_13_t
 // the gain factor itself is represented in q4_12_t
-//    0.6V   / (820 * 0.01 * 0.021) * 2^13   /   2^12  *  2^12
+//    0.6V   / (680 * 0.01 * 0.021) * 2^13   /   2^12  *  2^12
 // reference    R6    gain    R_L    q3_13_t   adc_res   q4_12_t
-#define KD2_ADC_CURRGAIN_DEFAULT    28544
+#define KD2_ADC_CURRGAIN_DEFAULT    34420
 
 // the default temperature offset to convert the measurement to q9_7_t
 // the offset itself is represented in q9_7_t
