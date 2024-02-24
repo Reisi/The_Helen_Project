@@ -10,11 +10,11 @@
 #ifndef VERSION_H_INCLUDED
 #define VERSION_H_INCLUDED
 
-#define VERSION_MAJOR   2
-//#define VERSION_MINOR   0
-//#define VERSION_PATCH   0
+#define VERSION_MAJOR   3
+#define VERSION_MINOR   0
+#define VERSION_PATCH   0
 
-#define VERSION_LEVEL   "alpha"
+#define VERSION_LEVEL   "beta"
 
 #ifndef VERSION_MAJOR
 #error "at least VERSION_MAJOR is necessary"
@@ -24,7 +24,7 @@
 #define xstr(s) str(s)
 
 #ifndef VERSION_MINOR
-#define VERSION_NUMSTR  "v" xstr(VERSION_MAJOR)
+#define VERSION_NUMSTR  xstr(VERSION_MAJOR)
 #else
 #ifndef VERSION_PATCH
 #define VERSION_NUMSTR  xstr(VERSION_MAJOR) "." xstr(VERSION_MINOR)

@@ -32,6 +32,7 @@ NRF_LOG_MODULE_REGISTER();
 #ifdef DEBUG_EXT
 #include "ble_nus.h"
 #include "debug.h"
+#include "btle.h"
 #endif // DEBUG_EXT
 
 /* External variables --------------------------------------------------------*/
@@ -44,17 +45,20 @@ NRF_LOG_MODULE_REGISTER();
 #define DEAD_BEEF   0xDEADBEEF  /**< Value used as error code on stack dump, can be used to identify stack location on stack unwind. */
 
 /* Private function prototype ------------------------------------------------*/
+#ifdef DEBUG_EXT
+static uint32_t initNus(void * pContext);
+#endif
 
 /* Private variables ---------------------------------------------------------*/
 #ifdef DEBUG_EXT
 BLE_NUS_DEF(nusGattS, NRF_SDH_BLE_TOTAL_LINK_COUNT);
+BTLE_SERVICE_REGISTER(nusService, initNus, NULL);
 #endif
 
 /* Private functions ---------------------------------------------------------*/
 static ret_code_t logInit(void)
 {
     ret_code_t errCode = NRF_LOG_INIT(NULL);
-    //APP_ERROR_CHECK(errCode);
 
     NRF_LOG_DEFAULT_BACKENDS_INIT();
 
@@ -117,18 +121,12 @@ static void nusDataHandler(ble_nus_evt_t* pEvt)
     (void)dbg_DataSend((uint8_t*)list, &len, pEvt->conn_handle);
 }
 
-static void initNus()
+static uint32_t initNus(void * pContext)
 {
-    ble_nus_init_t nusInit = {.data_handler = nusDataHandler};
-    APP_ERROR_CHECK(ble_nus_init(&nusGattS, &nusInit));
-}
+    (void)pContext;
 
-static bool isNusInit()
-{
-    if (nusGattS.uuid_type == BLE_UUID_TYPE_UNKNOWN)
-        return false;
-    else
-        return true;
+    ble_nus_init_t nusInit = {.data_handler = nusDataHandler};
+    return ble_nus_init(&nusGattS, &nusInit);
 }
 #endif
 
@@ -165,8 +163,8 @@ ret_code_t dbg_Init()
 bool dbg_Execute(void)
 {
 #ifdef DEBUG_EXT
-    if (!isNusInit())
-        initNus();
+    /*if (!isNusInit())
+        initNus();*/
 
     for (uint_fast8_t i = 0; i < DEBUG_CNT(); i++)
     {

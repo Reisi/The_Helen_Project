@@ -67,23 +67,6 @@ static void buttonEval(uint8_t evalId, but_evalEvent_t evt, uint16_t stillPressC
             errCode = hmi_RequestEvent(HMI_EVT_NEXTMODE, NULL);
             LOG_ERROR_CHECK("[XDRV]: hmi request error %d", errCode);
             break;
-        case BUTTON_CLICKLONG:
-            errCode = hmi_RequestEvent(HMI_EVT_NEXTGROUP, NULL);
-            LOG_ERROR_CHECK("[XDRV]: hmi request error %d", errCode);
-            break;
-        default:
-            break;
-        }
-    }
-    else if (evalId == evalIdSec)
-    {
-        switch (evt)
-        {
-        case BUTTON_CLICKSHORT:
-        case BUTTON_CLICKLONG:
-            errCode = hmi_RequestEvent(HMI_EVT_MODEPREF, NULL);
-            LOG_ERROR_CHECK("[XDRV]: hmi request error %d", errCode);
-            break;
         case BUTTON_IS_STILL_PRESSED:
             if (stillPressCnt == MSEC_TO_UNITS(500, UNIT_10_MS))
             {
@@ -99,6 +82,25 @@ static void buttonEval(uint8_t evalId, but_evalEvent_t evt, uint16_t stillPressC
             break;
         }
     }
+    else if (evalId == evalIdSec)
+    {
+        switch (evt)
+        {
+        case BUTTON_CLICKSHORT:
+            errCode = hmi_RequestEvent(HMI_EVT_NEXTGROUP, NULL);
+            LOG_ERROR_CHECK("[XDRV]: hmi request error %d", errCode);
+            break;
+        case BUTTON_IS_STILL_PRESSED:
+            if (stillPressCnt == MSEC_TO_UNITS(500, UNIT_10_MS))
+            {
+                errCode = hmi_RequestEvent(HMI_EVT_MODEPREF, NULL);
+                LOG_ERROR_CHECK("[XDRV]: hmi request error %d", errCode);
+            }
+            break;
+        default:
+            break;
+        }
+    }
 }
 
 static void init()
@@ -106,7 +108,7 @@ static void init()
     but_evaluateInit_t evalInit = {0};
     evalInit.reportHandler      = buttonEval;
     evalInit.longClickCnt       = MSEC_TO_UNITS(500, UNIT_10_MS);
-    evalInit.StillPressedPeriod = MSEC_TO_UNITS(2000, UNIT_10_MS);
+    evalInit.StillPressedPeriod = MSEC_TO_UNITS(500, UNIT_10_MS);
     evalInit.abortCnt           = MSEC_TO_UNITS(30000, UNIT_10_MS);
     evalIdMain = but_EvaluateInit(&evalInit);
 

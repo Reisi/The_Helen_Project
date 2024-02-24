@@ -126,7 +126,7 @@ static ret_code_t buttonInit(uint32_t mainButton, uint32_t secondaryButton)
     but_evaluateInit_t evalInit = {0};
     evalInit.longClickCnt = BUTTONPRESS_LONG;
     evalInit.StillPressedPeriod = BUTTONPRESS_HOLD2SEC;
-    evalInit.abortCnt = BUTTONPRESS_HOLD10SEC;
+    evalInit.abortCnt = BUTTONPRESS_HOLDABORT;
     evalInit.reportHandler = buttonEval;
     buttonIds[MAIN_BUTTON] = but_EvaluateInit(&evalInit);
 

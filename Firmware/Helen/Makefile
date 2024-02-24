@@ -14,6 +14,8 @@ SRC_FILES += \
   hmi/button.c \
   hmi/hmi.c \
   ble/link_management.c \
+  ble/ble_hps.c \
+  ble/ble_hps_c.c \
   ble/ble_lcs.c \
   ble/ble_lcs_ctrlpt.c \
   ble/ble_lcs_c.c \
@@ -38,6 +40,7 @@ SRC_FILES += \
   $(SDK_ROOT)/components/ble/common/ble_conn_params.c \
   $(SDK_ROOT)/components/ble/common/ble_conn_state.c \
   $(SDK_ROOT)/components/ble/common/ble_srv_common.c \
+  $(SDK_ROOT)/components/ble/nrf_ble_qwr/nrf_ble_qwr.c \
   $(SDK_ROOT)/components/ble/nrf_ble_gatt/nrf_ble_gatt.c \
   $(SDK_ROOT)/components/ble/nrf_ble_gq/nrf_ble_gq.c \
   $(SDK_ROOT)/components/ble/nrf_ble_scan/nrf_ble_scan.c \

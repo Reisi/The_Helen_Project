@@ -266,13 +266,14 @@ static void encodeGroupConfig(uint8_t* pGroups, uint8_t* pCnt)
     memset(pGroups, 0, *pCnt);
 
     uint_fast8_t i = 0, j = 0;
-    mm_modeConfig_t const* pMode = mm_GetModeConfig(i);
-    while (pMode != NULL && j < *pCnt)
+    mm_modeConfig_t const* pMode;// = mm_GetModeConfig(i);
+    (void)mm_GetModeConfigs(&pMode);
+    while (i < MM_NUM_OF_MODES && j < *pCnt)
     {
         pGroups[j] += 1;
-        if (pMode->lastInGroup)
+        if (pMode[i++].lastInGroup)
             j++;
-        pMode = mm_GetModeConfig(++i);
+        //pMode = mm_GetModeConfig(++i);
     }
     *pCnt = j;
 }
@@ -301,13 +302,14 @@ static void encodeModeConfig(uint8_t start, ble_lcs_hlmt_mode_t* pList, uint8_t*
     channelSize = channelSize < 8 ? channelSize : 8;   // ignoring PMW channel so far, will fail if helena base board is available
 
     uint_fast8_t j = 0;
-    mm_modeConfig_t const* pMode = mm_GetModeConfig(start);
-    while (pMode != NULL && j < *pCnt)
+    mm_modeConfig_t const* pMode;// = mm_GetModeConfig(start);
+    (void)mm_GetModeConfigs(&pMode);
+    while (start < MM_NUM_OF_MODES && j < *pCnt)
     {
-        pList[j].setup.spot = pMode->ignore ? 0 : 1;
+        pList[j].setup.spot = pMode[start].ignore ? 0 : 1;
         pList[j].setup.taillight = 0;
         pList[j].setup.brakelight = 0;
-        if (j < channelSize && !pMode->ignore)
+        if (j < channelSize && !pMode[start++].ignore)
         {
             pList[j].intensity = CHT_53_TO_PERCENT(pChannels[j].intensity);
             if (pChannels[j].intensity == 0)
@@ -319,7 +321,7 @@ static void encodeModeConfig(uint8_t start, ble_lcs_hlmt_mode_t* pList, uint8_t*
             pList[j].intensity = 0;
             pList[j].setup.spot = 0;
         }
-        pMode = mm_GetModeConfig(++start);
+        //pMode = mm_GetModeConfig(++start);
         j++;
     }
     *pCnt = j;
@@ -540,25 +542,106 @@ static void lcsCpEventHandler(ble_lcs_ctrlpt_t * pLcsCtrlpt, ble_lcs_ctrlpt_evt_
     APP_ERROR_CHECK(errCode);
 }
 
-static ret_code_t bluetoothInit(btle_info_t const* const pInfo, bool IMUPresent)
+static bool hpsEventHandler(ble_hps_evt_t const * pEvt)
+{
+    if (pEvt->evt_type == BLE_HPS_EVT_MODE_CONFIG_CHANGED)
+    {
+        ret_code_t errCode;
+        uint16_t size;
+
+        size = (uint32_t)pEvt->params.modes.p_channel_config - (uint32_t)pEvt->params.modes.p_mode_config;
+
+        errCode = mm_CheckModeConfig((mm_modeConfig_t const*)(pEvt->params.modes.p_mode_config), size);
+        if (errCode != NRF_SUCCESS)
+            return false;
+
+        errCode = brd_SetChannelConfig(pEvt->params.modes.p_channel_config, pEvt->params.modes.total_size - size, NULL);
+        if (errCode == NRF_ERROR_INVALID_LENGTH || errCode == NRF_ERROR_INVALID_PARAM)
+            return false;
+        LOG_ERROR_CHECK("setting channel config error %d", errCode);
+
+        errCode = mm_SetModeConfig((mm_modeConfig_t const*)pEvt->params.modes.p_mode_config, size, NULL);
+        LOG_ERROR_CHECK("setting mode config error %d", errCode);
+    }
+    else if (pEvt->evt_type == BLE_HPS_EVT_CP_WRITE)
+    {
+        hmi_evtParams_t hmiParam;
+
+        switch (pEvt->params.ctrl_pt.opcode)
+        {
+        case BLE_HPS_CP_SET_MODE:
+            hmiParam.mode.modeNumber = pEvt->params.ctrl_pt.mode_request;
+            hmiParam.mode.connHandle = pEvt->p_client->conn_handle;
+            (void)hmi_RequestEvent(HMI_EVT_MODENUMBER, &hmiParam);
+            break;
+
+        case BLE_HPS_CP_REQ_SEARCH:
+            (void)hmi_RequestEvent(HMI_EVT_SEARCHREMOTE, NULL);
+            break;
+
+        case BLE_HPS_CP_REQ_FACTORY_RESET:
+            hmiParam.resultHandler = NULL;
+            (void)hmi_RequestEvent(HMI_EVT_FACTORYRESET, &hmiParam);
+            break;
+
+        default:
+            return false;
+        }
+    }
+    return true;
+}
+
+static void btleEventHandler(btle_event_t const * pEvt)
+{
+    if (pEvt->type == BTLE_EVT_NAME_CHANGE)
+    {
+        NRF_LOG_INFO("new device name received: %s", pEvt->pNewDeviceName);
+
+        ret_code_t errCode;
+        errCode = brd_SetDeviceName(pEvt->pNewDeviceName, NULL);
+        LOG_ERROR_CHECK("setting device name error %d", errCode);
+    }
+}
+
+static ret_code_t bluetoothInit(brd_info_t const* pBrdInfo)//btle_info_t const* const pInfo, brd_features_t const* pFeatures, ble_hps_modes_init_t const* pModes)
 {
     ble_lcs_init_t lcsInit = {0};
     lcsInit.cp_evt_handler = lcsCpEventHandler;
     lcsInit.error_handler = lcsCpErrorHandler;
     lcsInit.feature.light_type = BLE_LCS_LT_HELMET_LIGHT;
     lcsInit.feature.hlmt_features.spot_supported = 1;
-    //lcsInit.feature.hlmt_features.flood_supported = 1; /// TODO: just temporary due to error in app
-    lcsInit.feature.hlmt_features.pitch_comp_supported = IMUPresent ? 1 : 0;
+    lcsInit.feature.hlmt_features.pitch_comp_supported = pBrdInfo->pFeatures->isIMUPresent ? 1 : 0;
     lcsInit.feature.cfg_features.mode_change_supported = 1;
     lcsInit.feature.cfg_features.mode_config_supported = 1;
     lcsInit.feature.cfg_features.mode_grouping_supported = 1;
     lcsInit.feature.cfg_features.preferred_mode_supported = 1;
     lcsInit.feature.cfg_features.temporary_mode_supported = 1;
 
+    ble_hps_init_t hpsInit = {0};
+    ble_hps_f_ch_size_t chSize[pBrdInfo->pFeatures->channelCount];
+    hpsInit.features.mode_count = MM_NUM_OF_MODES;
+    hpsInit.features.channel_count = pBrdInfo->pFeatures->channelCount;
+    for (uint8_t i = 0; i < ARRAY_SIZE(chSize); i++)
+    {
+        chSize[i].channel_bitsize = 8;  /// TODO this cannot be hardcoded here, it should be shifted to board specific code
+        chSize[i].sp_ftr_bitsize = 3;
+        chSize[i].channel_description = pBrdInfo->pFeatures->pChannelTypes[i];
+    }
+    hpsInit.features.p_channel_size = chSize;
+    hpsInit.features.flags.mode_set_supported = true;   /// TODO shift to board specific code
+    hpsInit.features.flags.search_request_supported = true;
+    hpsInit.features.flags.factory_reset_supported = true;
+    hpsInit.modes = *(pBrdInfo->pModes);
+    hpsInit.evt_handler = hpsEventHandler;
+
     btle_init_t btleInit = {0};
-    btleInit.pInfo = pInfo;
-    //btleInit.useWhitelistAdvertising = true,
+    btleInit.advType = BTLE_ADV_TYPE_AFTER_SEARCH,            /// TODO board specific and options for no button
+    btleInit.maxDeviceNameLength = pBrdInfo->pFeatures->maxNameLenght;
+    btleInit.pInfo = pBrdInfo->pInfo;
+    btleInit.eventHandler = btleEventHandler;
     btleInit.pLcsInit = &lcsInit;
+    btleInit.pHpsInit = &hpsInit;
+    btleInit.qwrBuffer = pBrdInfo->qwrBuffer;
 
     return btle_Init(&btleInit);
 }
@@ -610,7 +693,7 @@ ret_code_t hmiEventHandler(hmi_evt_t const* pEvent)
                 pendingFlashOp.firstErrorCode = errCode;
             NRF_LOG_ERROR("deleting bonds error %d", errCode);
         }
-        // if both requests failed, result might to be sent manually
+        // if all requests failed, result might to be sent manually
         if (pendingFlashOp.hmiResponse == 0 && !isBlockZero(&pendingFlashOp, sizeof(pendingFlashOp)))
         {
             pEvent->params.resultHandler(pendingFlashOp.firstErrorCode);
@@ -684,6 +767,8 @@ static ret_code_t comInit(brd_comPins_t const* pPins)
 
 static void modeChanged(uint8_t newMode)
 {
+    if (newMode == MM_MODE_OFF)
+        newMode = mm_GetOffMode();
     ret_code_t errCode = brd_SetLightMode(newMode);
     LOG_ERROR_CHECK("setting light mode error %d", errCode);
 }
@@ -700,6 +785,11 @@ int main(void)
     errCode = dbg_Init();
     APP_ERROR_CHECK(errCode);
 
+    // First of all initialize the mode management, so that the modes are
+    // already for the board initialization
+    errCode = mm_Init(modeChanged, &initMode);
+    APP_ERROR_CHECK(errCode);
+
     errCode = brd_Init(&pBrdInfos);
     LOG_ERROR_CHECK("board init error %d", errCode);
     if (criticalError == NRF_SUCCESS)
@@ -708,14 +798,11 @@ int main(void)
     errCode = mainInit();
     APP_ERROR_CHECK(errCode);
 
-    errCode = mm_Init(modeChanged, &initMode);
-    APP_ERROR_CHECK(errCode);
-
     hmi_init_t hmiInit = {.eventHandler = hmiEventHandler};
     errCode = hmi_Init(&hmiInit);
     APP_ERROR_CHECK(errCode);
 
-    errCode = bluetoothInit(pBrdInfos->pInfo, pBrdInfos->pFeatures->isIMUPresent);
+    errCode = bluetoothInit(pBrdInfos);
     APP_ERROR_CHECK(errCode);
 
     errCode = comInit(&pBrdInfos->pFeatures->comSupported);
@@ -730,6 +817,8 @@ int main(void)
 
     errCode = brd_SetPowerMode(BRD_PM_IDLE);
     APP_ERROR_CHECK(errCode);
+    if (initMode == MM_MODE_OFF)
+        initMode = mm_GetOffMode();
     errCode = brd_SetLightMode(initMode);
     APP_ERROR_CHECK(errCode);
     errCode = lm_SetExposureMode(LM_EXP_LOW_LATENCY);

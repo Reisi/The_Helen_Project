@@ -34,9 +34,9 @@ typedef struct
 typedef void (*mm_modeChangedHandler_t)(uint8_t newMode);
 
 /* Exported constants --------------------------------------------------------*/
-#define MM_NUM_OF_MODES 8               // temporary lcs functions only work with 8!
-#define MM_MODE_OFF     255
-//#define MM_MODE_SOS     254           // not implemented yet
+#define MM_NUM_OF_MODES     8               // temporary lcs functions only work with 8!
+#define MM_MODE_OFF         255
+//#define MM_MODE_SOS         254           // not implemented yet
 
 /* Exported macros -----------------------------------------------------------*/
 
@@ -80,7 +80,13 @@ uint8_t mm_GetOffMode(void);
  * @return the configuration of the mode, for MM_MODE_OFF either
  *         NULL or the settings of the off mode
  */
-mm_modeConfig_t const* mm_GetModeConfig(uint8_t mode);
+//mm_modeConfig_t const* mm_GetModeConfig(uint8_t mode);
+
+ret_code_t mm_GetModeConfigs(mm_modeConfig_t const** ppModeConfigs);
+
+ret_code_t mm_CheckModeConfig(mm_modeConfig_t const* pModeConfig, uint16_t size);
+
+ret_code_t mm_SetModeConfig(mm_modeConfig_t const* pModeConfig, uint16_t size, ds_reportHandler_t resultHandler);
 
 /** @brief function to initiate the procedure to delete all internal settings
  *

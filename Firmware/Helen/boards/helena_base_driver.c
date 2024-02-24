@@ -9,7 +9,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include <string.h>
 #include "helena_base_driver.h"
-//#include "helena_base.h"
+#include "nrf_delay.h"
 
 /* Private typedef -----------------------------------------------------------*/
 
@@ -156,6 +156,10 @@ static hbd_retVal_t initialize(hbd_inst_t* pInst, uint8_t* pCnt)
     {
         pInst[i].fwRev = HBD_FWREV_UNKOWN;
     }
+
+    // on power on the integrated bootloader waits 250ms
+    /// TODO delay is only necessary on power up
+    nrf_delay_ms(250);
 
     for (uint_fast8_t i = 0; i < sizeof(baseAdresses) && *pCnt < cnt; i++)
     {

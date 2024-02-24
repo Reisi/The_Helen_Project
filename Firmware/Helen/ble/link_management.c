@@ -18,7 +18,8 @@
 #include "app_timer.h"
 
 #include "link_management.h"
-#include "ble_lcs_c.h"
+#include "ble_hps.h"
+#include "ble_lcs.h"
 #include "btle.h"
 
 /* logger configuration ----------------------------------------------_-------*/
@@ -48,22 +49,25 @@ typedef struct
 {
     lm_advState_t actual;
     lm_advState_t desired;
-    bool useWhitelistAdvertising;
+    btle_advType_t advType;     // the type of advertising
+    bool isOpenAdvertising;     // indicating if current advertising should be open to unbonded devices, this will
+                                // be reset by advertising timeout or when peripheral device connects,
 } advState_t;
-
-typedef struct
-{
-    ble_gap_addr_t  address;    // the address of the remote to be connected
-    rem_driver_t const* pDriver;// the used driver
-    uint16_t waitForDisconnect; // the connection handle of the device, that has to be disconnected first
-} remoteConnecting_t;
 
 typedef struct
 {
     lm_scanState_t actual;
     lm_scanState_t desired;
-    bool isPeriphControl;
+    uint8_t isPeriphControl;    // cumulative counter, if set from several services
 } scanState_t;
+
+typedef struct
+{
+    ble_gap_addr_t  address;    // the address of the device to be connected, this will be reset in the onConnected handler or on connection timeout
+    rem_driver_t const* pDriver;// the used driver (if device is a remote, null pointer otherwise)
+    uint16_t waitForDisconnect; // the connection handle of the remote, that has to be disconnected first ( if trying to connect to a remote)
+    bool isSearchDevice;        // true if the device was found through active scanning, false for whitelist scanning
+} deviceConnecting_t;
 
 /* Private macros ------------------------------------------------------------*/
 
@@ -154,10 +158,11 @@ static const ble_gap_sec_params_t secParam =
 BLE_ADVERTISING_DEF(advInst);               // advertising instance
 NRF_BLE_SCAN_DEF(scanInst);                 // scanner instance
 
+static uint8_t uuidType;                    // the uuid type of the light control and helen project service
 static advState_t advState;                 // the advertising state
 static scanState_t scanState;               // the scanning state
-static remoteConnecting_t pendingRemote;    // information of the remote device helen is trying to connect to
-static uint8_t lcsUuidType;                 // the uuid type of the light control service
+static deviceConnecting_t pendingDevice;    // information of the device, helen is trying to connect to
+static uint16_t openPeriphConnHandle;       // the connection handle of the peripheral that connected during open advertising
 static uint16_t remoteConnHandle;           // the connection handle of the currently connected remote
 static lm_eventHandler_t eventHandler;      // the event handler
 static ds_reportHandler_t deleteHandler;    // the deletion report handler, only set if a deletion is pending
@@ -168,7 +173,7 @@ static void connect(ble_gap_addr_t const* pAddr)
 {
     uint32_t errCode;
 
-    // scanning has to be stopped to connect
+    // scanning has to be stopped to connect, it will be restarted when connected or on connection timeout
     nrf_ble_scan_stop();
     scanState.actual = LM_SCAN_OFF;
 
@@ -187,10 +192,10 @@ static void disconnect(uint16_t connHandle, void * pContext)
 {
     UNUSED_PARAMETER(pContext);
 
-    ret_code_t err_code = sd_ble_gap_disconnect(connHandle, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
-    if (err_code != NRF_SUCCESS)
+    ret_code_t errCode = sd_ble_gap_disconnect(connHandle, BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
+    if (errCode != NRF_SUCCESS)
     {
-        NRF_LOG_WARNING("Failed to disconnect connection. Connection handle: %d Error: %d", connHandle, err_code);
+        NRF_LOG_WARNING("Failed to disconnect connection. Connection handle: %d Error: %d", connHandle, errCode);
     }
     else
     {
@@ -198,154 +203,39 @@ static void disconnect(uint16_t connHandle, void * pContext)
     }
 }
 
-/**@brief Function for handling advertising events.
+static void sendScanEvent(lm_scanState_t state)
+{
+    NRF_LOG_INFO("scan state changed, desire %d, actual %d", scanState.desired, state)
+
+    if (eventHandler == NULL)
+        return;
+
+    lm_evt_t evt;
+    evt.type = LM_EVT_SCAN_MODE_CHANGED;
+    evt.evt.newScanState = state;
+    eventHandler(&evt);
+}
+
+static void sendAdvEvent(lm_advState_t state)
+{
+    NRF_LOG_INFO("advertising state changed, desired: %d, actual %d", advState.desired, state)
+
+    if (eventHandler == NULL)
+        return;
+
+    lm_evt_t evt;
+    evt.type = LM_EVT_ADV_MODE_CHANGED;
+    evt.evt.newAdvState = state;
+    eventHandler(&evt);
+}
+
+/** @brief function to retrieve the next peer manager id depending on the device role
  *
- * @details This function will be called for advertising events which are passed to the application.
- *
- * @param[in] ble_adv_evt  Advertising event.
+ * @param peerId    the peer id to start from, PM_PEER_ID_INVALID to get the first
+ * @param role      BLE_GAP_ROLE_CENTRAL or BLE_GAP_ROLE_PERIPHERAL
+ * @return the peer id or PM_PEER_ID_INVALID if no more available
  */
-static void advEventHandler(ble_adv_evt_t advEvt)
-{
-    switch (advEvt)
-    {
-        case BLE_ADV_EVT_FAST:
-            advState.actual = LM_ADV_FAST;
-            break;
-
-        case BLE_ADV_EVT_SLOW:
-            advState.actual = LM_ADV_SLOW;
-            break;
-
-        case BLE_ADV_EVT_FAST_WHITELIST:
-            advState.actual = LM_ADV_FAST_WHITELIST;
-            break;
-
-        case BLE_ADV_EVT_SLOW_WHITELIST:
-            advState.actual = LM_ADV_SLOW_WHITELIST;
-            break;
-
-        case BLE_ADV_EVT_IDLE:
-            advState.actual = LM_ADV_OFF;
-            break;
-
-        case BLE_ADV_EVT_WHITELIST_REQUEST:
-        {
-            ble_gap_addr_t addrs[8];
-            ble_gap_irk_t irks[8];
-            uint32_t errCode, addrCnt = ARRAY_SIZE(addrs), irkCnt = ARRAY_SIZE(irks);
-            errCode = pm_whitelist_get(addrs, &addrCnt, irks, &irkCnt);
-            if (errCode != NRF_SUCCESS)
-            {
-                NRF_LOG_WARNING("whitelist fetching error &d", errCode);
-            }
-            errCode = ble_advertising_whitelist_reply(&advInst, addrs, addrCnt, irks, irkCnt);
-            if (errCode != NRF_SUCCESS)
-            {
-                NRF_LOG_WARNING("whitelist fetching error &d", errCode);
-            }
-        }   return;
-
-        default:
-            return;
-    }
-
-    NRF_LOG_INFO("advertising state changed, desired: %d, actual %d", advState.desired, advState.actual);
-
-    if (eventHandler != NULL)
-    {
-        lm_evt_t evt;
-        evt.type = LM_EVT_ADV_MODE_CHANGED;
-        evt.evt.newAdvState = advState.actual;
-        eventHandler(&evt);
-    }
-}
-
-static void advErrorHandler(uint32_t errCode)
-{
-    NRF_LOG_ERROR("advertising error %d", errCode);
-}
-
-/** @brief function to set the desired advertising mode
- *
- * @note the actual used advertising mode is reported through the event handler
- *
- * @param[in] mode the desired mode
- * @param[in] deactivateWhitelist  true if whitelist should be disabled until next change
- * @return the return value of ble_advertising_start
- */
-static ret_code_t setAdvMode(lm_advState_t mode, bool deactivateWhitelist)
-{
-    ble_adv_modes_config_t config = advConfig;
-    ble_adv_mode_t advMode = BLE_ADV_MODE_IDLE;
-    ret_code_t errCode = NRF_SUCCESS;
-
-    // convert BTLE_ADV_... modes to BLE_ADV_... modes
-    if (mode == LM_ADV_FAST)
-        advMode = BLE_ADV_MODE_FAST;
-    else if (mode == LM_ADV_SLOW)
-        advMode = BLE_ADV_MODE_SLOW;
-    else if (mode != LM_ADV_OFF)
-        return NRF_ERROR_INVALID_PARAM;
-
-    // stop advertising to be able to restart with different settings
-    (void)sd_ble_gap_adv_stop(advInst.adv_handle);
-
-    // not using ble_advertising_restart_without_whitelist() because whitelist
-    // would be disabled until next disconnect event, I want it enabled
-    // automatically the next time advertising is changed.
-    config.ble_adv_whitelist_enabled = advState.useWhitelistAdvertising;
-    advInst.whitelist_temporarily_disabled = deactivateWhitelist;
-
-    if (mode == LM_ADV_OFF)
-    {   // prevent module from restarting if a device disconnects
-        config.ble_adv_on_disconnect_disabled = true;
-        ble_advertising_modes_config_set(&advInst, &config);
-    }
-    else
-    {
-        ble_advertising_modes_config_set(&advInst, &config);
-        errCode = ble_advertising_start(&advInst, advMode);
-        if (errCode == NRF_ERROR_CONN_COUNT)    /// TODO: maybe catch this case and don't even try to start advertising
-            errCode = NRF_SUCCESS;
-        /// TODO: advertising is started without whitelist if no devices are stored
-    }
-
-    // make sure whitelist is used the next time
-    advInst.whitelist_temporarily_disabled = false;
-
-    if (errCode != NRF_SUCCESS && errCode != NRF_ERROR_CONN_COUNT)  // no advertising when already connected
-    {
-        NRF_LOG_ERROR("setting advertising mode error %d", errCode);
-    }
-
-    return errCode;
-}
-
-static bool setWhitelist()
-{
-    uint32_t errCode, cnt = 0;
-    pm_peer_id_t peers[8], id = pm_next_peer_id_get(PM_PEER_ID_INVALID);
-
-    while (id != PM_PEER_ID_INVALID && cnt < ARRAY_SIZE(peers))
-    {
-        peers[cnt++] = id;
-        id = pm_next_peer_id_get(id);
-    }
-
-    if (cnt == 0)
-        return false;
-
-    errCode = pm_whitelist_set(peers, cnt);
-    APP_ERROR_CHECK(errCode);
-
-    // advertising and scanning needs to be disabled to change this
-    //errCode = pm_device_identities_list_set(peers, cnt);
-    //APP_ERROR_CHECK(errCode);
-
-    return true;
-}
-
-static pm_peer_id_t nextCentralIdGet(pm_peer_id_t peerId)
+static pm_peer_id_t nextPeerIdGet(pm_peer_id_t peerId, uint8_t role)
 {
     pm_peer_data_bonding_t peerData;
 
@@ -360,20 +250,17 @@ static pm_peer_id_t nextCentralIdGet(pm_peer_id_t peerId)
         {
             NRF_LOG_ERROR("error loading bonding data, %d", errCode);
         }
-        else if (peerData.own_role == BLE_GAP_ROLE_CENTRAL)
+        else if (peerData.own_role == role)
             break;
     }
     return peerId;
 }
 
-/**< returns the number of stored central devices that are not connected */
-static uint8_t devicesToScanFor()
+/**< returns the number of bonded but unconnected devices depending on the device role */
+static uint8_t unconnectedDevices(uint8_t role)
 {
-    /// TODO: how to exclude remotes if device is under peripheral control?
-    ///       don't forget to reset scanning if this peripheral disconnects
-
     uint8_t cnt = 0;
-    pm_peer_id_t peer = nextCentralIdGet(PM_PEER_ID_INVALID);
+    pm_peer_id_t peer = nextPeerIdGet(PM_PEER_ID_INVALID, role);
 
     while (peer != PM_PEER_ID_INVALID)
     {
@@ -381,10 +268,173 @@ static uint8_t devicesToScanFor()
         APP_ERROR_CHECK(pm_conn_handle_get(peer, &connHandle));
         if (ble_conn_state_status(connHandle) != BLE_CONN_STATUS_CONNECTED)
             cnt++;
-        peer = nextCentralIdGet(peer);
+        peer = nextPeerIdGet(peer, role);
     }
 
     return cnt;
+}
+
+/**@brief Function for handling advertising events.
+ *
+ * @details This function will be called for advertising events which are passed to the application.
+ *
+ * @param[in] ble_adv_evt  Advertising event.
+ */
+static void advEventHandler(ble_adv_evt_t advEvt)
+{
+    lm_advState_t newState;
+
+    switch (advEvt)
+    {
+        // the dedicated LM_ADV_OPEN mode is only used when advertising isn't open all the time
+        case BLE_ADV_EVT_FAST:
+            if (advState.advType == BTLE_ADV_TYPE_ALWAYS_OPEN || !advState.isOpenAdvertising)
+                newState = LM_ADV_FAST;
+            else
+                newState = LM_ADV_OPEN;
+            break;
+
+        case BLE_ADV_EVT_SLOW:
+            newState = LM_ADV_SLOW;
+            // open advertising has ended
+            if (advState.isOpenAdvertising && advState.advType != BTLE_ADV_TYPE_ALWAYS_OPEN)
+            {
+                // check if there are devices to advertise to, if not stop advertising
+                if (unconnectedDevices(BLE_GAP_ROLE_PERIPH) == 0)
+                {
+                    (void)sd_ble_gap_adv_stop(advInst.adv_handle);
+                    newState = LM_ADV_OFF;
+                }
+
+                advState.isOpenAdvertising = false;
+            }
+            break;
+
+        case BLE_ADV_EVT_IDLE:
+            newState = LM_ADV_OFF;
+            break;
+
+        default:
+            return;
+    }
+
+    if (newState != advState.actual)
+    {
+        sendAdvEvent(newState);
+        advState.actual = newState;
+    }
+}
+
+static void advErrorHandler(uint32_t errCode)
+{
+    NRF_LOG_ERROR("advertising error %d", errCode);
+}
+
+/** @brief function to set the desired advertising mode
+ *
+ * @note the actual used advertising mode is reported through the event handler
+ *
+ * @param[in] mode                  the desired mode
+ * @return the return value of ble_advertising_start
+ */
+static ret_code_t setAdvMode(lm_advState_t mode)
+{
+    ble_adv_modes_config_t config = advConfig;
+    ble_adv_mode_t advMode = BLE_ADV_MODE_IDLE;
+    ret_code_t errCode = NRF_SUCCESS;
+
+    /// TODO: is it necessary to check if already in the requested mode? (desired or actual?)
+
+    // convert BTLE_ADV_... modes to BLE_ADV_... modes
+    switch (mode)
+    {
+    case LM_ADV_OFF:
+        break;
+    case LM_ADV_SLOW:
+        advMode = BLE_ADV_MODE_SLOW;
+        break;
+    case LM_ADV_FAST:
+    case LM_ADV_OPEN:
+        advMode = BLE_ADV_MODE_FAST;
+        break;
+    }
+
+    // stop advertising to be able to restart with different settings
+    (void)sd_ble_gap_adv_stop(advInst.adv_handle);
+
+    advState.isOpenAdvertising = mode == LM_ADV_OPEN ? true : advState.advType == BTLE_ADV_TYPE_ALWAYS_OPEN;
+
+    // check if there are devices to advertise to
+    if (!advState.isOpenAdvertising)
+    {
+        if(unconnectedDevices(BLE_GAP_ROLE_PERIPH) == 0 ||
+           ble_conn_state_peripheral_conn_count() == NRF_SDH_BLE_PERIPHERAL_LINK_COUNT)
+        {
+            // no device to advertise to, advertising is not needed, manually update state and send event
+            sendAdvEvent(LM_ADV_OFF);
+            advState.actual = LM_ADV_OFF;
+            return NRF_SUCCESS;
+        }
+    }
+
+    if (mode == LM_ADV_OFF)
+    {   // prevent module from restarting if a device disconnects
+        config.ble_adv_on_disconnect_disabled = true;
+        ble_advertising_modes_config_set(&advInst, &config);
+        // set mode and event manually
+        sendAdvEvent(LM_ADV_OFF);
+        advState.actual = LM_ADV_OFF;
+    }
+    else
+    {
+        ble_advertising_modes_config_set(&advInst, &config);
+        errCode = ble_advertising_start(&advInst, advMode);
+        // state and event are handled in the advertising event handler
+    }
+
+    if (errCode != NRF_SUCCESS)
+    {
+        NRF_LOG_ERROR("setting advertising mode error %d", errCode);
+    }
+
+    return errCode;
+}
+
+/** @brief sets the white list
+ *  @note  whitelist is only used for scanning, so only devices with central role are added
+ *
+ * @return bool
+ *
+ */
+static bool setWhitelist()
+{
+    uint32_t errCode, cnt = 0;
+    pm_peer_id_t peers[8], id = nextPeerIdGet(PM_PEER_ID_INVALID, BLE_GAP_ROLE_CENTRAL);
+
+    while (id != PM_PEER_ID_INVALID && cnt < ARRAY_SIZE(peers))
+    {
+        // check if the device is already connected
+        uint16_t connHandle = BLE_CONN_HANDLE_INVALID;
+        (void)pm_conn_handle_get(id, &connHandle);
+        if (ble_conn_state_status(connHandle) != BLE_CONN_STATUS_CONNECTED) // add only unconnected devices
+            peers[cnt++] = id;
+        id = pm_next_peer_id_get(id);
+    }
+
+    if (cnt == 0)
+        return false;
+
+    errCode = pm_whitelist_set(peers, cnt);
+    APP_ERROR_CHECK(errCode);
+
+    // advertising and scanning needs to be disabled to change this
+    errCode = pm_device_identities_list_set(peers, cnt);
+    if (errCode != BLE_ERROR_GAP_DEVICE_IDENTITIES_IN_USE) /// TODO: how to handle correctly
+    {
+        APP_ERROR_CHECK(errCode);
+    }
+
+    return true;
 }
 
 static ret_code_t setScanMode(lm_scanState_t mode)
@@ -392,7 +442,7 @@ static ret_code_t setScanMode(lm_scanState_t mode)
     /// TODO: how to handle searching, if no connections are available?
 
     ret_code_t errCode = NRF_SUCCESS;
-    bool devicesAvailable = (bool)devicesToScanFor();
+    bool devicesAvailable = (bool)unconnectedDevices(BLE_GAP_ROLE_CENTRAL);
     bool connectionsAvailable = ble_conn_state_central_conn_count() < NRF_SDH_BLE_CENTRAL_LINK_COUNT;
     lm_scanState_t newMode = LM_SCAN_OFF;
 
@@ -411,15 +461,10 @@ static ret_code_t setScanMode(lm_scanState_t mode)
         }
     }
 
-    scanState.actual = newMode;
-    NRF_LOG_INFO("scan state changed, desired: %d, actual %d", scanState.desired, scanState.actual);
-
-    if (eventHandler != NULL)
+    if (scanState.actual != newMode)
     {
-        lm_evt_t evt;
-        evt.type = LM_EVT_SCAN_MODE_CHANGED;
-        evt.evt.newAdvState = scanState.actual;
-        eventHandler(&evt);
+        sendScanEvent(newMode);
+        scanState.actual = newMode;
     }
 
     if (errCode != NRF_SUCCESS)
@@ -442,13 +487,13 @@ static rem_driver_t const* isRemote(uint8_t const* pData, uint16_t len)
     return NULL;
 }
 
-static bool isLcs(uint8_t const* pData, uint16_t len)
+static bool isCustomService(uint16_t uuid, uint8_t const* pData, uint16_t len)
 {
-    ble_uuid_t lcsServiceUuid;
-    lcsServiceUuid.uuid = BLE_UUID_LCS_SERVICE;
-    lcsServiceUuid.type = lcsUuidType;
+    ble_uuid_t serviceUuid;
+    serviceUuid.uuid = uuid;
+    serviceUuid.type = uuidType;
 
-    return ble_advdata_uuid_find(pData, len, &lcsServiceUuid);
+    return ble_advdata_uuid_find(pData, len, &serviceUuid);
 }
 
 static void scanningEventHandler(scan_evt_t const* pScanEvt)
@@ -458,51 +503,76 @@ static void scanningEventHandler(scan_evt_t const* pScanEvt)
     switch(pScanEvt->scan_evt_id)
     {
     case NRF_BLE_SCAN_EVT_WHITELIST_REQUEST:
-        /// TODO: maybe setting the whitelist is only necessary if a new device is added?
-        setWhitelist(); /// TODO: stop advertising?
-        break;
+    {   /// TODO: maybe setting the whitelist is only necessary if a new device is added?
+        setWhitelist();
+    }   return;
 
+    // scanning timeout is only used when searching for new devices, thus this event can be used to start open advertising after
     case NRF_BLE_SCAN_EVT_SCAN_TIMEOUT:
         // restart previous scan mode after searching
         (void)setScanMode(scanState.desired);
-        // start advertising without whitelist
-        if (advState.useWhitelistAdvertising)
-            (void)setAdvMode(LM_ADV_FAST, true);
-        break;
+        // advertising was stopped while searching, restart with previous or open mode
+        (void)setAdvMode(advState.advType == BTLE_ADV_TYPE_AFTER_SEARCH ? LM_ADV_OPEN : advState.desired);
+        return;
 
     case NRF_BLE_SCAN_EVT_FILTER_MATCH:
         pAdv = pScanEvt->params.filter_match.p_adv_report;
+        break;
     case NRF_BLE_SCAN_EVT_WHITELIST_ADV_REPORT:
         pAdv = pScanEvt->params.p_whitelist_adv_report;
-        // check if the device is a remote
-        rem_driver_t const* pDriver = isRemote(pAdv->data.p_data, pAdv->data.len);
-        if (pDriver != NULL)
-        {
-            NRF_LOG_INFO("remote control advertising report received");
-
-            if (!scanState.isPeriphControl) // don't connect if under peripheral control
-            {
-                pendingRemote.pDriver = pDriver;
-                pendingRemote.address = pAdv->peer_addr;
-                if (remoteConnHandle == BLE_CONN_HANDLE_INVALID)
-                    connect(&pAdv->peer_addr); // connect if no remote is connected yet
-                else if (pScanEvt->scan_evt_id == NRF_BLE_SCAN_EVT_FILTER_MATCH)
-                {                   // disconnect existing remote if a new one was found while searching
-                    disconnect(remoteConnHandle, NULL);
-                    pendingRemote.waitForDisconnect = remoteConnHandle;
-                }
-            }
-        }
-        // check if device is another light
-        if (isLcs(pAdv->data.p_data, pAdv->data.len))
-        {
-            NRF_LOG_INFO("light control advertising report received");
-            connect(&pAdv->peer_addr);
-        }
         break;
 
     default:
-        break;
+        return;
+    }
+
+    // additional handling for cases NRF_BLE_SCAN_EVT_FILTER_MATCH and NRF_BLE_SCAN_EVT_WHITELIST_ADV_REPORT
+    // safety check, should not happen
+    ble_gap_addr_t zero = {0};
+    if (memcmp(&pendingDevice.address, &zero, sizeof(ble_gap_addr_t)) != 0)
+    {
+        NRF_LOG_ERROR("scanning while device connection is still pending")
+    }
+
+    // check if the device is a remote
+    rem_driver_t const* pDriver = isRemote(pAdv->data.p_data, pAdv->data.len);
+    if (pDriver != NULL)
+    {
+        NRF_LOG_INFO("remote control advertising report received");
+
+        if (!scanState.isPeriphControl) // don't connect if under peripheral control
+        {
+            pendingDevice.address = pAdv->peer_addr;
+            pendingDevice.pDriver = pDriver;
+            pendingDevice.isSearchDevice = pScanEvt->scan_evt_id == NRF_BLE_SCAN_EVT_FILTER_MATCH;
+            if (remoteConnHandle == BLE_CONN_HANDLE_INVALID)
+                connect(&pAdv->peer_addr); // connect if no remote is connected yet
+            else if (pScanEvt->scan_evt_id == NRF_BLE_SCAN_EVT_FILTER_MATCH)
+            {                   // disconnect existing remote if a new one was found while searching
+                if (pendingDevice.waitForDisconnect != remoteConnHandle) // don't disconnect more than once
+                {
+                    disconnect(remoteConnHandle, NULL);
+                    pendingDevice.waitForDisconnect = remoteConnHandle;
+                }
+            }
+        }
+    }
+    // check if device is another light
+    if (isCustomService(BLE_UUID_LCS_SERVICE, pAdv->data.p_data, pAdv->data.len))
+    {
+        NRF_LOG_INFO("light control advertising report received");
+        pendingDevice.address = pAdv->peer_addr;
+        pendingDevice.pDriver = NULL;
+        pendingDevice.isSearchDevice = pScanEvt->scan_evt_id == NRF_BLE_SCAN_EVT_FILTER_MATCH;
+        connect(&pAdv->peer_addr);
+    }
+    if (isCustomService(BLE_UUID_HPS_SERVICE, pAdv->data.p_data, pAdv->data.len))
+    {
+        NRF_LOG_INFO("helen project advertising report received");
+        pendingDevice.address = pAdv->peer_addr;
+        pendingDevice.pDriver = NULL;
+        pendingDevice.isSearchDevice = pScanEvt->scan_evt_id == NRF_BLE_SCAN_EVT_FILTER_MATCH;
+        connect(&pAdv->peer_addr);
     }
 }
 
@@ -513,19 +583,24 @@ static ret_code_t advertisingInit(lm_init_t const* pInit)
     ble_uuid_t uuids[] =
     {
         {
+            .uuid = BLE_UUID_HPS_SERVICE,
+            .type = pInit->uuidType
+        },
+        {
             .uuid = BLE_UUID_LCS_SERVICE,
-            .type = pInit->lcsUuidType
+            .type = pInit->uuidType
         }
     };
 
-    advState.useWhitelistAdvertising = pInit->useWhitelistAdvertising;
+    advState.advType                            = pInit->advType;
 
     init.advdata.name_type                      = BLE_ADVDATA_FULL_NAME;
-    init.advdata.include_appearance             = false;
     init.advdata.flags                          = BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE;
-    init.advdata.uuids_more_available.uuid_cnt  = ARRAY_SIZE(uuids);
-    init.advdata.uuids_more_available.p_uuids   = uuids;
-    init.config.ble_adv_whitelist_enabled       = pInit->useWhitelistAdvertising;
+    init.advdata.uuids_more_available.uuid_cnt  = 1;
+    init.advdata.uuids_more_available.p_uuids   = &uuids[0];
+    init.srdata.include_appearance              = true;
+    init.srdata.uuids_more_available.uuid_cnt   = 1;
+    init.srdata.uuids_more_available.p_uuids    = &uuids[1];
     init.evt_handler                            = advEventHandler;
     init.error_handler                          = advErrorHandler;
 
@@ -543,10 +618,12 @@ static ret_code_t advertisingInit(lm_init_t const* pInit)
         NRF_LOG_ERROR("setting advertising power error %d", errCode);
     }
 
+    openPeriphConnHandle = BLE_CONN_HANDLE_INVALID;
+
     return errCode;
 }
 
-static ret_code_t scanningInit(uint8_t lcsUuidType)
+static ret_code_t scanningInit(uint8_t uuidType)
 {
     ret_code_t errCode;
     nrf_ble_scan_init_t init = {0};
@@ -557,12 +634,16 @@ static ret_code_t scanningInit(uint8_t lcsUuidType)
             .type = BLE_UUID_TYPE_BLE
         },
         {
+            .uuid = BLE_UUID_HPS_SERVICE,
+            .type = uuidType
+        },
+        {
             .uuid = BLE_UUID_LCS_SERVICE,
-            .type = lcsUuidType
+            .type = uuidType
         }
     };
 
-    pendingRemote.waitForDisconnect = BLE_CONN_HANDLE_INVALID;
+    pendingDevice.waitForDisconnect = BLE_CONN_HANDLE_INVALID;
     remoteConnHandle = BLE_CONN_HANDLE_INVALID;
 
     init.p_scan_param = &scanParams[SCAN_LOW_POWER];
@@ -649,13 +730,49 @@ static void pmEventHandler(pm_evt_t const * pEvt)
             if (deleteHandler)
                 deleteHandler(errCode);
             setScanMode(scanState.desired);     // nothing to scan for, but to generate event
-            setAdvMode(advState.desired, false);// to generate event and in case of non whitelist advertising
+            setAdvMode(advState.desired);       // to generate event and in case of open advertising
             break;
+        case PM_EVT_CONN_SEC_CONFIG_REQ:
+        {   // This happens if we are the peripheral and the central has lost its key. We allow
+            // rebonding only in open advertise mode
+            NRF_LOG_INFO("the other side lost its key")
+            pm_conn_sec_config_t config =
+            {
+                .allow_repairing = advState.advType == BTLE_ADV_TYPE_ALWAYS_OPEN ||
+                                   pEvt->conn_handle == openPeriphConnHandle   // allow rebonding only in open advertising mode
+            };
+            pm_conn_sec_config_reply(pEvt->conn_handle, &config);
+
+        }   break;
         case PM_EVT_LOCAL_DB_CACHE_APPLY_FAILED:
             pm_local_database_has_changed();
             break;
         case PM_EVT_CONN_SEC_FAILED:
-            if (pEvt->params.conn_sec_failed.error != PM_CONN_SEC_ERROR_DISCONNECT)
+            if (pEvt->params.conn_sec_failed.error == PM_CONN_SEC_ERROR_PIN_OR_KEY_MISSING)
+            {   // this error occurs when connecting to a peripheral, which has lost its key.
+                // If we are the central we can force rebonding if we are in the search state
+                if (ble_conn_state_role(pEvt->conn_handle) == BLE_GAP_ROLE_CENTRAL && pendingDevice.isSearchDevice)
+                {
+                    NRF_LOG_INFO("peripheral lost its key, force rebonding");
+                    errCode = pm_conn_secure(pEvt->conn_handle, true);    // force rebonding
+                    if (errCode != NRF_SUCCESS)
+                    {
+                        NRF_LOG_WARNING("link secure with forced rebonding failed, error %d", errCode);
+                    }
+                    break;
+                }
+                // if we are in the peripheral role we cannot do anything, the central has to rebond, but we
+                // only allow it in the open advertising mode
+                else if (ble_conn_state_role(pEvt->conn_handle) == BLE_GAP_ROLE_PERIPH &&
+                         (pEvt->conn_handle == openPeriphConnHandle))
+                {
+                    NRF_LOG_INFO("central tries to bond with key, but we don't have one");
+                }
+                else
+                    pm_handler_disconnect_on_sec_failure(pEvt);
+            }
+
+            else if (pEvt->params.conn_sec_failed.error != PM_CONN_SEC_ERROR_DISCONNECT)
                 pm_handler_disconnect_on_sec_failure(pEvt);
             break;
         default:
@@ -699,10 +816,39 @@ static ret_code_t peerManagerInit()
  * @param connHandle
  * @return void
  */
-static void onDisconnected(uint16_t connHandle)
+static void onDisconnected(uint16_t connHandle, ble_gap_evt_disconnected_t const* pEvt)
 {
     uint8_t role = ble_conn_state_role(connHandle);
     lm_evt_t evt;
+
+    if (role == BLE_GAP_ROLE_PERIPH)
+    {
+        NRF_LOG_INFO("Peripheral disconnected, connection handle %d, reason %d", connHandle, pEvt->reason);
+
+        if (connHandle == openPeriphConnHandle)
+            openPeriphConnHandle = BLE_CONN_HANDLE_INVALID;
+    }
+    else if (role == BLE_GAP_ROLE_CENTRAL)
+    {
+        if (connHandle == remoteConnHandle)
+        {
+            remoteConnHandle = BLE_CONN_HANDLE_INVALID;
+            NRF_LOG_INFO("Remote disconnected, connection handle %d, reason %d", connHandle, pEvt->reason);
+        }
+        else
+        {
+            NRF_LOG_INFO("Central disconnected, connection handle %d, reason %d", connHandle, pEvt->reason);
+        }
+    }
+
+    // send a disconnect event
+    if (eventHandler != NULL)
+    {
+        evt.type = LM_EVT_DISCONNECTED;
+        evt.evt.conn.connHandle = connHandle;
+        evt.evt.conn.role = role;
+        eventHandler(&evt);
+    }
 
     // check if peer deletion is pending
     if (deleteHandler)
@@ -713,47 +859,23 @@ static void onDisconnected(uint16_t connHandle)
             if (errCode != NRF_SUCCESS)
             {   // inform main if peer deletion procedure can not be started
                 deleteHandler(errCode);
-                deleteHandler = NULL;
             }
+            deleteHandler = NULL;
         }
         return; // return to prevent restart of scanning
     }
 
-    if (role == BLE_GAP_ROLE_PERIPH)
+    if (role == BLE_GAP_ROLE_CENTRAL)
     {
-        // is there anything to do?
-        NRF_LOG_INFO("Peripheral disconnected, connection handle %d", connHandle);
-    }
-    else if (role == BLE_GAP_ROLE_CENTRAL)
-    {
-        if (connHandle == remoteConnHandle)
-        {
-            remoteConnHandle = BLE_CONN_HANDLE_INVALID;
-            NRF_LOG_INFO("Remote disconnected, connection handle %d", connHandle);
-        }
-        else
-        {
-            NRF_LOG_INFO("Central disconnected, connection handle %d", connHandle);
-        }
-
         // initiate connection to pending device
-        if (connHandle == pendingRemote.waitForDisconnect)
+        if (connHandle == pendingDevice.waitForDisconnect)
         {
-            connect(&pendingRemote.address);
-            pendingRemote.waitForDisconnect = BLE_CONN_HANDLE_INVALID;
+            connect(&pendingDevice.address);
+            pendingDevice.waitForDisconnect = BLE_CONN_HANDLE_INVALID;
         }
         // otherwise restart scanning
         else if (scanState.actual != scanState.desired)
             (void)setScanMode(scanState.desired);   // error logging in setScanMode
-    }
-
-    // send a disconnect event
-    if (eventHandler != NULL)
-    {
-        evt.type = LM_EVT_DISCONNECTED;
-        evt.evt.conn.connHandle = connHandle;
-        evt.evt.conn.role = role;
-        eventHandler(&evt);
     }
 }
 
@@ -775,46 +897,80 @@ static void onConnected(uint16_t connHandle, ble_gap_evt_connected_t const* pCon
 
     if (role == BLE_GAP_ROLE_CENTRAL)
     {
-        // initiate bonding if this is a new device
-        pm_conn_sec_status_t connStatus = {0};
-        (void)pm_conn_sec_status_get(connHandle, &connStatus);
-        if (!connStatus.bonded)
+        if (memcmp(&pConnected->peer_addr, &pendingDevice.address, sizeof(pendingDevice.address)) != 0)
         {
-            errCode = pm_conn_secure(connHandle, false);
-            if (errCode != NRF_SUCCESS)
-            {
-                NRF_LOG_WARNING("link secure failed, error %d", errCode);
-            }
-        }
-
-        // add remote driver to event if this is a expected remote
-        if (memcmp(&pConnected->peer_addr, &pendingRemote.address, sizeof(pendingRemote.address)) == 0)
-        {
-            evt.evt.conn.pRemDriver = pendingRemote.pDriver;
-            memset(&pendingRemote.address, 0, sizeof(pendingRemote.address));
-            remoteConnHandle = connHandle;
-            NRF_LOG_INFO("Remote connected, connection handle %d", connHandle);
+            NRF_LOG_ERROR("unexpected device connected")
         }
         else
         {
-            NRF_LOG_INFO("Central connected, connection handle %d", connHandle);
+            // initiate bonding if this link isn't bonded yet
+            pm_conn_sec_status_t connStatus = {0};
+            (void)pm_conn_sec_status_get(connHandle, &connStatus);
+            if (!connStatus.bonded)
+            {
+                errCode = pm_conn_secure(connHandle, false);
+                if (errCode != NRF_SUCCESS)
+                {
+                    NRF_LOG_WARNING("link secure failed, error %d", errCode);
+                }
+            }
+
+            // add remote driver to event if this is a expected remote
+            if (pendingDevice.pDriver != NULL)
+            {
+                evt.evt.conn.pRemDriver = pendingDevice.pDriver;
+                remoteConnHandle = connHandle;
+                NRF_LOG_INFO("Remote connected, connection handle %d", connHandle);
+            }
+            // nothing else to do for HPS or LCS device
+            else
+            {
+                NRF_LOG_INFO("Central connected, connection handle %d", connHandle);
+            }
         }
-        // scanner has to deactivated to connect, so restart
+
+        // pending device connected, clear
+        memset(&pendingDevice.address, 0, sizeof(pendingDevice.address));
+
+        // advertising is deactivated during search, reactivate
+        if (scanState.actual == SCAN_SEARCH)
+            (void)setAdvMode(advState.desired);
+
+        // scanner has to be deactivated to connect, so restart
         (void)setScanMode(scanState.desired); // error is logged inside setScanMode
     }
     else if (role == BLE_GAP_ROLE_PERIPH)
     {
-        // deactivation of advertising on connection is not reported through event handler ans
-        // as long as only one peripheral link is supported advertising is definitely off when
-        // a device is connected
-        advState.actual = LM_ADV_OFF;
-        if (eventHandler != NULL)
+        // in open advertising reset flag do defaults and save connection handle to identify this device later for bonding
+        if (advState.isOpenAdvertising)
         {
-            lm_evt_t advEvt;
-            advEvt.type = LM_EVT_ADV_MODE_CHANGED;
-            advEvt.evt.newAdvState = advState.actual;
-            eventHandler(&advEvt);
+            advState.isOpenAdvertising = advState.advType == BTLE_ADV_TYPE_ALWAYS_OPEN;
+            openPeriphConnHandle = connHandle;
+            // report changed advertising state
+            if (advState.advType != BTLE_ADV_TYPE_ALWAYS_OPEN)
+            {
+                // the event can only change form LM_ADV_OPEN to LM_ADV_FAST
+                sendAdvEvent(LM_ADV_FAST);
+                advState.actual = LM_ADV_FAST;
+            }
         }
+        // otherwise check if the device is bonded, if not disconnect immediately (manual whitelisting)
+        else
+        {
+            pm_peer_id_t peerId;
+            (void)pm_peer_id_get(connHandle, &peerId);
+            if (peerId == PM_PEER_ID_INVALID)
+                disconnect(connHandle, NULL);
+        }
+
+        // deactivation of advertising on connection is not reported through event handler
+        if (ble_conn_state_peripheral_conn_count() == NRF_SDH_BLE_PERIPHERAL_LINK_COUNT ||
+            unconnectedDevices(BLE_GAP_ROLE_PERIPH) == 0)
+        {
+            sendAdvEvent(LM_ADV_OFF);
+            advState.actual = LM_ADV_OFF;
+        }
+
         NRF_LOG_INFO("Peripheral connected, connection handle %d", connHandle);
     }
 
@@ -832,7 +988,7 @@ static void bleEventHandler(ble_evt_t const * pBleEvt, void * pContext)
     switch (pBleEvt->header.evt_id)
     {
         case BLE_GAP_EVT_DISCONNECTED:
-            onDisconnected(pBleEvt->evt.gap_evt.conn_handle);
+            onDisconnected(pBleEvt->evt.gap_evt.conn_handle, &pBleEvt->evt.gap_evt.params.disconnected);
             break;
 
         case BLE_GAP_EVT_CONNECTED:
@@ -841,9 +997,17 @@ static void bleEventHandler(ble_evt_t const * pBleEvt, void * pContext)
 
         case BLE_GAP_EVT_TIMEOUT:
             if (pBleEvt->evt.gap_evt.params.timeout.src == BLE_GAP_TIMEOUT_SRC_CONN)
-            {   // scanning was stopped for connection, restart
+            {
+                NRF_LOG_INFO("connection timeout, restarting scanning");
+                // reset pending device and restart scanner and advertising (if deactivated because of search)
+                memset(&pendingDevice.address, 0, sizeof(pendingDevice.address));
+                // restart advertising if it was deactivated for searching
+                if (scanState.actual == LM_SCAN_SEARCH)
+                    setAdvMode(advState.desired);
+                // restart scanner
                 setScanMode(scanState.desired);
             }
+
             break;
 
         case BLE_GAP_EVT_PHY_UPDATE_REQUEST:
@@ -904,8 +1068,8 @@ ret_code_t lm_Init(lm_init_t const* pInit)
     if (errCode != NRF_SUCCESS)
         return errCode;
 
-    lcsUuidType = pInit->lcsUuidType;
-    errCode = scanningInit(pInit->lcsUuidType);
+    uuidType = pInit->uuidType;
+    errCode = scanningInit(pInit->uuidType);
     if (errCode != NRF_SUCCESS)
         return errCode;
 
@@ -924,7 +1088,7 @@ ret_code_t lm_Init(lm_init_t const* pInit)
 
 ret_code_t lm_SetExposureMode(lm_exposureMode_t mode)
 {
-    /// TODO: handle advertising with temporary disabled whitelist if scan search is not available
+    static bool started;    // indicator for BTLE_ADV_TYPE_STARTUP
 
     ret_code_t errCode = NRF_SUCCESS;
     lm_scanState_t scanModeReq = (lm_scanState_t)mode;
@@ -938,23 +1102,39 @@ ret_code_t lm_SetExposureMode(lm_exposureMode_t mode)
     // searching is just temporary, start searching but don't save
     if (scanModeReq == LM_SCAN_SEARCH && scanState.actual != LM_SCAN_SEARCH)
     {
+        // stop advertising during search, to prevent unwanted connections
+        (void)sd_ble_gap_adv_stop(advInst.adv_handle);
+        sendAdvEvent(LM_ADV_OFF);
+        advState.actual = LM_ADV_OFF;
+        advState.desired = advModeReq;
+
         errCode = setScanMode(scanModeReq);
+
+        return errCode; // advertising already handled for this case
     }
     // otherwise start scanning if not already in desired mode
-    else if (scanModeReq != scanState.desired)
+    else if (scanModeReq != scanState.desired && scanModeReq != LM_SCAN_SEARCH)
     {
         scanState.desired = scanModeReq;
         errCode = setScanMode(scanModeReq);
     }
 
-    // change adv mode if necesary
-    if (advState.desired != advModeReq)
+    // if startup advertising is selected override advertising on first call
+    if (advState.advType == BTLE_ADV_TYPE_STARTUP && !started)
+    {
+        started = true;
+        advState.desired = advModeReq;
+        if (errCode != NRF_SUCCESS) // preserve error code
+            (void)setAdvMode(LM_ADV_OPEN);
+    }
+    // change adv mode if necessary
+    else if (advState.desired != advModeReq)
     {
         advState.desired = advModeReq;
         if (errCode != NRF_SUCCESS) // preserve error code
-            (void)setAdvMode(advModeReq, false);
+            (void)setAdvMode(advModeReq);
         else
-            errCode = setAdvMode(advModeReq, false);
+            errCode = setAdvMode(advModeReq);
     }
 
     // finally disconnect devices if shutting down
@@ -998,7 +1178,11 @@ void lm_disconnectAll()
 
 void lm_diconnectAndIgnoreRemote(bool enable)
 {
-    scanState.isPeriphControl = enable;
+    if (enable)
+        scanState.isPeriphControl++;
+    else if (scanState.isPeriphControl)
+        scanState.isPeriphControl--;
+
     if (enable && remoteConnHandle != BLE_CONN_HANDLE_INVALID)
         disconnect(remoteConnHandle, NULL);
 }
@@ -1010,7 +1194,7 @@ ret_code_t lm_DeleteBonds(ds_reportHandler_t pHandler)
     // stop scanning and advertising to prevent any new connections
     // not updating desired modes, to be able to restart after successful deletion
     nrf_ble_scan_stop();
-    (void)setAdvMode(LM_ADV_OFF, false);
+    (void)setAdvMode(LM_ADV_OFF);
 
     deleteHandler = pHandler;
 
@@ -1019,7 +1203,14 @@ ret_code_t lm_DeleteBonds(ds_reportHandler_t pHandler)
 
     // if no devices are connected, content can be deleted immediately
     if (!connCount)
+    {
         errCode = pm_peers_delete();
+        if (errCode != NRF_SUCCESS)
+        {
+            deleteHandler(errCode);
+            deleteHandler = NULL;
+        }
+    }
 
     return errCode;
 }

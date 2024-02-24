@@ -501,12 +501,19 @@ ret_code_t mm_HmiEventHandler(hmi_evt_t const* pEvent)
     }
 
     /// TODO: check if mode has changed at all
-
-    NRF_LOG_INFO("new mode %d", state.currentMode);
+    if ((state.currentMode == MM_MODE_OFF) && (mm_GetOffMode() != MM_MODE_OFF))
+    {
+        NRF_LOG_INFO("new mode %d (%d)", state.currentMode, mm_GetOffMode())
+    }
+    else
+    {
+        NRF_LOG_INFO("new mode %d", state.currentMode);
+    }
 
     if (relay)
     {
         ret_code_t errCode;
+        btle_modeRelay_t relay;
 
         // if the conn handle is invalid, the mode change was initiated through
         // the wired com, so no relay to com, but to all ble devices
@@ -523,7 +530,9 @@ ret_code_t mm_HmiEventHandler(hmi_evt_t const* pEvent)
         else
             connHandle = BLE_CONN_HANDLE_ALL;
 
-        errCode = btle_RelayMode(state.currentMode, connHandle);
+        relay.connHandle = connHandle;
+        relay.mode = state.currentMode;
+        errCode = btle_RelayMode(&relay);
         if (errCode != NRF_SUCCESS)
             LOG_WARNING_CHECK("ble relay error %d", errCode);
     }
@@ -543,12 +552,51 @@ uint8_t mm_GetOffMode()
     return getOffMode();
 }
 
-mm_modeConfig_t const* mm_GetModeConfig(uint8_t mode)
+/*mm_modeConfig_t const* mm_GetModeConfig(uint8_t mode)
 {
     if (mode >= ARRAY_SIZE(modes))
         return NULL;
     else
         return &modes[mode];
+}*/
+
+ret_code_t mm_GetModeConfigs(mm_modeConfig_t const** ppModeConfigs)
+{
+    if (ppModeConfigs == NULL)
+        return NRF_ERROR_NULL;
+
+    *ppModeConfigs = modes;
+
+    return NRF_SUCCESS;
+}
+
+ret_code_t mm_CheckModeConfig(mm_modeConfig_t const* pModeConfig, uint16_t size)
+{
+    if (pModeConfig == NULL)
+        return NRF_ERROR_NULL;
+
+    if (size != sizeof(modes))
+        return NRF_ERROR_INVALID_LENGTH;
+
+    return isModeConfigValid(pModeConfig) ? NRF_SUCCESS : NRF_ERROR_INVALID_PARAM;
+}
+
+ret_code_t mm_SetModeConfig(mm_modeConfig_t const* pModeConfig, uint16_t size, ds_reportHandler_t resultHandler)
+{
+    if (pModeConfig == NULL)
+        return NRF_ERROR_NULL;
+
+    if (size != sizeof(modes))
+        return NRF_ERROR_INVALID_LENGTH;
+
+    if (!isModeConfigValid(pModeConfig))
+        return NRF_ERROR_INVALID_PARAM;
+
+    memcpy(modes, pModeConfig, sizeof(modes));
+
+    memcpy(newModes.modes, modes, sizeof(modes));
+
+    return storeModes(DEFAULT_SET, resultHandler);
 }
 
 ret_code_t mm_FactoryReset(ds_reportHandler_t resultHandler)

@@ -107,23 +107,29 @@ SECTIONS
     KEEP(*(SORT(.log_backends*)))
     PROVIDE(__stop_log_backends = .);
   } > FLASH
-    .nrf_balloc :
+  .nrf_balloc :
   {
     PROVIDE(__start_nrf_balloc = .);
     KEEP(*(.nrf_balloc))
     PROVIDE(__stop_nrf_balloc = .);
   } > FLASH
-    .remote_driver :
+  .remote_driver :
   {
     PROVIDE(__start_remote_driver = .);
     KEEP(*(.remote_driver))
     PROVIDE(__stop_remote_driver = .);
   } > FLASH
-    .debug_commands :
+  .debug_commands :
   {
     PROVIDE(__start_debug_commands = .);
     KEEP(*(.debug_commands))
     PROVIDE(__stop_debug_commands = .);
+  } > FLASH
+  .btle_service :
+  {
+    PROVIDE(__start_btle_service = .);
+    KEEP(*(.btle_service))
+    PROVIDE(__stop_btle_service = .);
   } > FLASH
 
 } INSERT AFTER .text

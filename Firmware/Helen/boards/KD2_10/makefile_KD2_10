@@ -12,6 +12,8 @@ SRC_FILES += \
   boards/KD2_10/dbg_cmd_calib.c \
   boards/KD2_10/i2c/i2c.c \
   boards/KD2_10/ext/bosch/BMI160_driver/bmi160.c \
+  boards/KD2_10/ble_KD2.c \
+  boards/KD2_10/KD2_btle.c \
   boards/helena_base_driver.c \
   util/regulator.c \
   util/filter.c \

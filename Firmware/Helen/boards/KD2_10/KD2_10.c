@@ -44,6 +44,7 @@ NRF_LOG_MODULE_REGISTER();
 #include "pitch_reg.h"
 #include "com_message_handling.h"
 #include "helena_base_driver.h"
+#include "KD2_btle.h"
 
 /* External variables --------------------------------------------------------*/
 
@@ -63,14 +64,17 @@ NRF_LOG_MODULE_REGISTER();
 #define BMI_ONBOARD             0
 #define BMI_MODULE              1
 
-#define PRG_TYPE_NA             0xFF
+#define PRG_TYPE_NA             KD2_OPTIC_TYPE_NA
 
-#define DEFAULT_SET             0
-#define CHANNELS_VERSION        0
+#define DEVICENAME_LENGHT       BLE_GAP_DEVNAME_DEFAULT_LEN
+
+#define DEFAULT_SET             0           // the default config set, different sets not implemented yet, so 0
+#define CHANNELS_VERSION        0           // channel version to identify changes for future extensions
 #define CONFIG_VERSION          0
-#define CHANNELS_FILE_ID        0x13D2
-#define CHANNELS_RECORD_BASE    0x0101
-#define CONFIG_RECORD_BASE      0x0111
+#define CHANNELS_FILE_ID        0x13D2      // the file id for this module
+#define CHANNELS_RECORD_BASE    0x0101      // the base for channel configuration
+#define CONFIG_RECORD_BASE      0x0111      // the base for config (should be renamed to setup as in the app)
+#define NAME_RECORD_BASE        0x0121      // the base for the device name
 
 #define CHANNEL_DEFAULTS                                                      \
 {                                                                             \
@@ -103,44 +107,34 @@ NRF_LOG_MODULE_REGISTER();
     {.gain = (1 << 15), .offset = -448} \
 }*/
 
-// 85% limit for current regulators, no limit for PWMs
-#define CONFIG_LIMIT_DEFAULTS       \
+#define CHANNEL_SETUP_DEFAULT_CURR  \
 {                                   \
-    (85 << 8),                      \
-    (85 << 8),                      \
-    (85 << 8),                      \
-    KD2_TARGET_MAX,                 \
-    KD2_TARGET_MAX,                 \
+    .outputPower = (18 << 10),      \
+    .outputLimit = (85 << 8),       \
+    .optic.type = PRG_TYPE_15,      \
 }
 
-// 18W (2* 3A * 3V) for current regulator, 0 for PWM
-#define CONFIG_OUTPUT_PWR_DEFAULTS  \
+#define CHANNEL_SETUP_DEFAULT_PWM   \
 {                                   \
-    (18 << 10),                     \
-    (18 << 10),                     \
-    (18 << 10),                     \
-    0,                              \
-    0,                              \
+    .outputLimit = KD2_TARGET_MAX,  \
+    .optic.type = PRG_TYPE_NA       \
 }
 
-// pitch regulating disabled by default
-#define CONFIG_OPTIC_DEFAUTS        \
+#define CHANNEL_SETUP_DEFAULT       \
 {                                   \
-    {.type = PRG_TYPE_30},          \
-    {.type = PRG_TYPE_15},          \
-    {.type = PRG_TYPE_15},          \
-    {.type = PRG_TYPE_NA},          \
-    {.type = PRG_TYPE_NA},          \
+    CHANNEL_SETUP_DEFAULT_CURR,     \
+    CHANNEL_SETUP_DEFAULT_CURR,     \
+    CHANNEL_SETUP_DEFAULT_CURR,     \
+    CHANNEL_SETUP_DEFAULT_PWM,      \
+    CHANNEL_SETUP_DEFAULT_PWM       \
 }
 
-/// TODO: add pitch regulation defaults
-#define CONFIG_DEFAULTS             \
-{                                   \
-    CONFIG_LIMIT_DEFAULTS,          \
-    CONFIG_OUTPUT_PWR_DEFAULTS,     \
-    CONFIG_OPTIC_DEFAUTS,           \
-    CONFIG_COMP_DEFAULTS,           \
-    KD2_COMPIN_NOTUSED              \
+#define CONFIG_DEFAULTS                     \
+{                                           \
+    .channelSetup = CHANNEL_SETUP_DEFAULT,  \
+    .comp = CONFIG_COMP_DEFAULTS,           \
+    .comPinMode = KD2_COMPIN_NOTUSED,       \
+    .deviceName = "Helen" \
 }
 
 #define CONFIG_STR_DEFAULTS         \
@@ -160,6 +154,9 @@ NRF_LOG_MODULE_REGISTER();
 
 // 3A in q3_13_t, used for all current channels
 #define FULL_CURRENT            (3 << 13)
+
+#define SIZE_OF_MODES           (sizeof(channels_t) + MM_NUM_OF_MODES * sizeof(mm_modeConfig_t))
+#define SIZE_OF_QWR_BUFFER      (((SIZE_OF_MODES / 18) + 1) * 24)
 
 /* Private typedef -----------------------------------------------------------*/
 /**< the channel configurations */
@@ -200,14 +197,13 @@ typedef struct
 /**< device configuration */
 typedef struct
 {
-    KD2_target_t          limits[CHANNEL_CNT];      // the limits for each channel
-    q6_10_t               outputPower[CHANNEL_CNT]; // the output power for each channel
-    prg_optic_t           optic[CHANNEL_CNT];       // the configuration for pitch regulation
-    KD2_adcCompensation_t comp;                     // the adc compensation data
-    uint8_t               IMUAddr;                  // device address of IMU, 0 if not available
-    uint8_t               helenaBaseAddr;           // device address of helena base, 0 if not available
-    bool                  backsideAssembled;        // indicator if back side of board is fully assembled
-    KD2_comPinMode_t      comPinMode;               // mode of com pin
+    KD2_channelSetup_t    channelSetup[CHANNEL_CNT];        // the channel configurations
+    KD2_adcCompensation_t comp;                             // the adc compensation data
+    uint8_t               IMUAddr;                          // device address of IMU, 0 if not available
+    uint8_t               helenaBaseAddr;                   // device address of helena base, 0 if not available
+    bool                  backsideAssembled;                // indicator if back side of board is fully assembled
+    KD2_comPinMode_t      comPinMode;                       // mode of com pin
+    char                  deviceName[DEVICENAME_LENGHT + 1];// the device name if changed
 } config_t;
 
 /**< device configuration storage format */
@@ -240,23 +236,6 @@ static const cht_types_t channelTypes[] =
     CHT_TYPE_PWM,       // PWM signal on com pin
 };
 
-static const btle_info_t bleInfo =
-{
-    .pDevicename = "Helen",
-    .pManufacturer = NULL,
-    .pModelNumber = "KD2",
-    .pBoardHWVersion = "1.0",
-    .deviceAppearance = BLE_APPEARANCE_GENERIC_CYCLING,
-};
-
-// "forward" declaration of features here
-static brd_features_t   features;
-static const brd_info_t brdInfo =
-{
-    .pFeatures = &features,
-    .pInfo = &bleInfo,
-};
-
 static const bmi160drv_init_t bmiInit[] =
 {
     {   // configuration for onboard BMI160
@@ -274,32 +253,56 @@ static const bmi160drv_init_t bmiInit[] =
 };
 
 /* Private variables ---------------------------------------------------------*/
-static channels_t       channels = CHANNEL_DEFAULTS;
-static channels_str_t   newChannels __ALIGN(4) = CHANNEL_STR_DEFAULTS;
+static channels_t           channels = CHANNEL_DEFAULTS;
+static channels_str_t       newChannels __ALIGN(4) = CHANNEL_STR_DEFAULTS;
 
-static config_t         config = CONFIG_DEFAULTS;
-static config_str_t     newConfig __ALIGN(4) = CONFIG_STR_DEFAULTS;
+static config_t             config = CONFIG_DEFAULTS;
+static config_str_t         newConfig __ALIGN(4) = CONFIG_STR_DEFAULTS;
 
-//static brd_features_t   features; // declared above
+static uint8_t              modesBuffer[SIZE_OF_MODES];
+static brd_features_t       features;
+static ble_hps_modes_init_t modes;
+static uint8_t              qwrBuffer[SIZE_OF_QWR_BUFFER];
 
-static hbd_inst_t       helenaInst;
+static hbd_inst_t           helenaInst;
 
-static lim_channelDef_t limiter[CHANNEL_CNT];
-static limiting_t       limActive[CHANNEL_CNT];
-static uint16_t         updatePrescale;
-static uint8_t          batteryCellCnt;
+static lim_channelDef_t     limiter[CHANNEL_CNT];
+static limiting_t           limActive[CHANNEL_CNT];
+static uint16_t             updatePrescale;
+static uint8_t              batteryCellCnt;
 FIL_LOWPASS_DEF(filterVolt, 3000);
 FIL_LOWPASS_DEF(filterTemp, 25);
 
-static brd_powerMode_t  currentPowerMode, pendingPowerMode;
-static uint8_t          currentLightMode = MM_MODE_OFF, pendingLightMode = MM_MODE_OFF;
-static bool             isMultiOpticMode;   // indicating if the current mode is a pitch compensated mode with both 15 and 30° optic
+static brd_powerMode_t      currentPowerMode, pendingPowerMode;
+static uint8_t              currentLightMode = MM_MODE_OFF, pendingLightMode = MM_MODE_OFF;
+static bool                 isMultiOpticMode;   // indicating if the current mode is a pitch compensated mode with both 15 and 30° optic
 
-static KD2_adc_result_t lastResults;
+static KD2_target_t         currentOutputPower[CHANNEL_CNT];
+static hbd_samplingData_t   lastHelenaResults;
+static KD2_adc_result_t     lastAdcResults;
 FIL_MOVAVG_DEF(filterPitch, 8);
-static q15_t            pitch;
+static q15_t                pitch;
 
-static uint16_t         messagePrescale;
+static uint16_t             messagePrescale;
+
+/* Board inforamtion --------------------------------------------------------*/
+static const btle_info_t bleInfo =
+{
+    .pDevicename = (char const*)&config.deviceName,
+    .pManufacturer = NULL,
+    .pModelNumber = "KD2",
+    .pBoardHWVersion = "1.0",
+    .deviceAppearance = BLE_APPEARANCE_GENERIC_CYCLING,
+};
+
+static const brd_info_t     brdInfo =
+{
+    .pFeatures = &features,
+    .pInfo = &bleInfo,
+    .pModes = &modes,
+    .qwrBuffer.p_mem = qwrBuffer,
+    .qwrBuffer.len   = sizeof(qwrBuffer),
+};
 
 /* Private functions ---------------------------------------------------------*/
 /** @brief helper to check if a given channel configuration is valid
@@ -399,34 +402,24 @@ static ret_code_t storeChannels(uint8_t set, ds_reportHandler_t handler)
     return errCode;
 }*/
 
-/** @brief helper to determine if configuration is valid
+/** @brief helper to determine if channel setup is valid
  */
- /// TODO: channel types will be necessary if limits are not the same for all channels
-static bool isChannelLimitValid(KD2_target_t const* pLimits, uint8_t cnt)
+static bool isChannelSetupValid(KD2_channelSetup_t const* pSetup)
 {
-    for (uint_fast8_t i = 0; i < cnt; i++)
-    {
-        // limits cannot exceed max. and min. values
-        if (pLimits[i] > KD2_TARGET_MAX || pLimits[i] < KD2_TARGET_MIN)
-            return false;
-    }
-    return true;
-}
+    // output power is not limited yet
 
-static bool isChannelPowerValid(q6_10_t const* pPower, uint8_t cnt)
-{
-    (void)pPower;
-    (void)cnt;
-    return true;    // always valid for now
-}
+    // output limit needs to be between 0 and 100%
+    if (pSetup->outputLimit > KD2_TARGET_MAX || pSetup->outputPower < KD2_TARGET_MIN)
+        return false;
 
-static bool isChannelOpticValid(prg_optic_t const* pOptic, uint8_t cnt)
-{
-    for (uint_fast8_t i = 0; i < cnt; i++)
-    {
-        if (pOptic[i].type >= PRG_TYPE_CNT)
-            return false;
-    }
+    // optic needs to be a valid type
+    if (pSetup->optic.type >= PRG_TYPE_CNT && pSetup->optic.type != PRG_TYPE_NA)
+        return false;
+
+    // optic offset need to be between +-45°
+    if (pSetup->optic.offset > KD2_PITCH_OFF_MAX || pSetup->optic.offset < KD2_PITCH_OFF_MIN)
+        return false;
+
     return true;
 }
 
@@ -497,6 +490,11 @@ static bool isComPinModeValid(KD2_comPinMode_t mode)
         return true;
 }
 
+static bool isDeviceNameValid(char const* pName)
+{
+    return strlen(pName) <= DEVICENAME_LENGHT;
+}
+
 /** @brief function to load configuration from flash
  */
 static ret_code_t loadConfig()
@@ -510,14 +508,15 @@ static ret_code_t loadConfig()
     errCode = ds_Read(CHANNELS_FILE_ID, CONFIG_RECORD_BASE, (void const**)&pConfig, &lengthWords);
     if (errCode == NRF_SUCCESS)
     {
-        if (lengthWords == BYTES_TO_WORDS(sizeof(config_str_t)))
+        if (lengthWords == BYTES_TO_WORDS(sizeof(config_str_t)) && pConfig->numOfChannels == CHANNEL_CNT)
         {
-            if (isChannelLimitValid(pConfig->config.limits, pConfig->numOfChannels))
-                memcpy(config.limits, pConfig->config.limits, sizeof(config.limits));
-            if (isChannelPowerValid(pConfig->config.outputPower, pConfig->numOfChannels))
-                memcpy(config.outputPower, pConfig->config.outputPower, sizeof(config.outputPower));
-            if (isChannelOpticValid(pConfig->config.optic, pConfig->numOfChannels))
-                memcpy(config.optic, pConfig->config.optic, sizeof(config.optic));
+            bool channelSetupValid = true;
+            for (uint8_t i = 0; i < pConfig->numOfChannels; i++)
+            {
+                channelSetupValid = channelSetupValid && isChannelSetupValid(&pConfig->config.channelSetup[i]);
+            }
+            if (channelSetupValid)
+                memcpy(config.channelSetup, pConfig->config.channelSetup, sizeof(config.channelSetup));
             if (isCompensationValid(&pConfig->config.comp))
             {
                 memcpy(&config.comp, &pConfig->config.comp, sizeof(config.comp));
@@ -532,6 +531,9 @@ static ret_code_t loadConfig()
             config.backsideAssembled = pConfig->config.backsideAssembled;
             config.helenaBaseAddr    = pConfig->config.helenaBaseAddr;
             config.IMUAddr           = pConfig->config.IMUAddr;
+
+            if (isDeviceNameValid(pConfig->config.deviceName))
+                strcpy(config.deviceName, pConfig->config.deviceName);
         }
     }
     else if (errCode != FDS_ERR_NOT_FOUND)
@@ -571,18 +573,18 @@ static void adcResultHander(KD2_adc_result_t const* pResult)
         updatePrescale--;
 
     // store results
-    lastResults.inputVoltage = pResult->inputVoltage;
-    lastResults.ledCurrent   = pResult->ledCurrent;
+    lastAdcResults.inputVoltage = pResult->inputVoltage;
+    lastAdcResults.ledCurrent   = pResult->ledCurrent;
     if (pResult->temperature)
     {
-        lastResults.temperature = pResult->temperature;
+        lastAdcResults.temperature = pResult->temperature;
         fil_LowPassFeed(&filterTemp, (int32_t)pResult->temperature << 9);
     }
 
     if (currentLightMode != MM_MODE_OFF)
     {
         // relay current to regulator
-        int32_t actual = lastResults.ledCurrent;
+        int32_t actual = lastAdcResults.ledCurrent;
         actual *= (100 << 8);
         actual /= FULL_CURRENT;
         KD2_Curr_ReportCurrent(actual);
@@ -661,9 +663,9 @@ static bool isMultiOptic(uint8_t lightMode)
             (pCh->mode != CHMODE_PITCH))                                    // or ignore if pitch compensation not used for this mode and channel
             continue;
 
-        if (config.optic[i].type == PRG_TYPE_15)
+        if (config.channelSetup[i].optic.type == PRG_TYPE_15)
             is15 = true;
-        else if (config.optic[i].type == PRG_TYPE_30)
+        else if (config.channelSetup[i].optic.type == PRG_TYPE_30)
             is30 = true;
     }
 
@@ -699,17 +701,30 @@ static void setMode(brd_powerMode_t powerMode, uint8_t lightMode)
             updatePrescale = 0;
         }
 
+        if (config.comPinMode != KD2_COMPIN_COM)    // com pin needs clock all the time
+        {   // request or release the crystal clock for accurate temperature measurements
+            /// TODO: for for idle power reduction, clock can be enabled just for measurement period,
+            ///       but be aware, that it needs to be enabled in ON mode to prevent the PWM frequency jitter
+            if (newPM >= KD2_PWR_IDLE && adcPM < KD2_PWR_IDLE)
+                (void)sd_clock_hfclk_request();
+            else if (newPM < KD2_PWR_IDLE && adcPM >= KD2_PWR_IDLE)
+                (void)sd_clock_hfclk_release();
+        }
+        /// TODO: maybe it's better to source clock request and release into
+        ///       cumulative functions and let every module (com, adc, PWM,
+        ///       current, what else?) request clock independently.
+
         // request or release the crystal clock, otherwise the PWM frequency will jitter
         // com need hfclock all the time, so no need to request in that case
         // clock only necessary for onboard current and PWM, but not for helena
         // board channels, but this is not evaluated yet
-        if (config.comPinMode != KD2_COMPIN_COM)
+        /*if (config.comPinMode != KD2_COMPIN_COM)
         {
             if (newPM == KD2_PWR_ON && adcPM != KD2_PWR_ON)
                 (void)sd_clock_hfclk_request();
             else if (adcPM == KD2_PWR_ON && newPM != KD2_PWR_ON)
                 (void)sd_clock_hfclk_release();
-        }
+        }*/
 
         adcPM = newPM;
     }
@@ -804,9 +819,45 @@ static void getLcsStatus(ble_lcs_lm_status_flags_t* pLcsStatus)
     pLcsStatus->voltage = limActive[CHANNEL_CURRENT].voltage ? 1 : 0;
 }
 
+static void sendHpsMessage()
+{
+    if (currentPowerMode != BRD_PM_IDLE)
+        return;
+
+    ret_code_t errCode;
+    btle_hpsMeasurement_t message;
+    uint32_t power;
+
+    message.mode = mm_GetCurrentMode();//currentLightMode;
+    message.outputPower = 0;
+    /// TODO: read helena driver to calculate their power
+    if (isModeUsed(currentLightMode))
+    {
+        for (uint8_t i = 0; i < CHANNEL_CNT; i++)
+        {
+            power = config.channelSetup[i].outputPower;
+            power *= currentOutputPower[i];
+            power /= KD2_TARGET_MAX;
+            power *= 1000;
+            power >>= 10;
+            message.outputPower += power;
+        }
+    }
+    message.inputVoltage = (1000ul * lastAdcResults.inputVoltage) >> 11;
+    message.temperature = (int16_t)(lastAdcResults.temperature >> 7) - 273;
+
+    errCode = btle_ReportHpsMeasurements(&message);
+    if (errCode != NRF_SUCCESS &&
+        errCode != NRF_ERROR_INVALID_STATE && // ignore error if notifications are not enabled
+        errCode != NRF_ERROR_RESOURCES)       // ignore error if message buffer is full
+    {
+        NRF_LOG_ERROR("[BRD]: error %d sending message", errCode);
+    }
+}
+
 /** @brief function to send a ble notification with the current data
  */
-static void sendMessage()
+static void sendLcsMessage()
 {
     /// TODO: include PWM channels and helena driver
 
@@ -819,8 +870,8 @@ static void sendMessage()
     q3_13_t tailPower;
     q7_9_t soc;
 
-    power = config.outputPower[CHANNEL_CURRENT];
-    power *= lastResults.ledCurrent;
+    power = config.channelSetup[CHANNEL_CURRENT].outputPower;
+    power *= lastAdcResults.ledCurrent;
     power /= FULL_CURRENT;
     power *= 1000;  // convert from q6_10_t to mW
     power >>= 10;
@@ -831,8 +882,8 @@ static void sendMessage()
         message.powerSpot = power;
     else
         message.powerSpot = 0;
-    message.inputVoltage = (1000ul * lastResults.inputVoltage) >> 11;
-    message.temperature = (int16_t)(lastResults.temperature >> 7) - 273;
+    message.inputVoltage = (1000ul * lastAdcResults.inputVoltage) >> 11;
+    message.temperature = (int16_t)(lastAdcResults.temperature >> 7) - 273;
 
     angle = pitch;
     if (angle >= (1 << 14))
@@ -853,7 +904,7 @@ static void sendMessage()
     else
         message.powerTaillight = 0; // out of valid range, won't be included
 
-    errCode = btle_ReportMeasurements(&message);
+    errCode = btle_ReportLcsMeasurements(&message);
     if (errCode != NRF_SUCCESS &&
         errCode != NRF_ERROR_INVALID_STATE && // ignore error if notifications are not enabled
         errCode != NRF_ERROR_RESOURCES)       // ignore error if message buffer is full
@@ -898,7 +949,7 @@ static void limiterInit(KD2_adc_result_t const* pAdc)
 
     for (channelTypes_t i = 0; i < CHANNEL_CNT; i++)
     {
-        limiter[i].fullPower = (int32_t)config.outputPower[i] << 6;
+        limiter[i].fullPower = (int32_t)config.channelSetup[i].outputPower << 6;
         fullPower += limiter[i].fullPower;
     }
 
@@ -906,10 +957,10 @@ static void limiterInit(KD2_adc_result_t const* pAdc)
     {
         // a channel with less than 5% of the total output power gets the
         // highest priority regardless of the configured optic
-        if (config.outputPower[i] * 20 > fullPower)
+        if (config.channelSetup[i].outputPower * 20 > fullPower)
             limiter[i].priority = LIM_PRIO_HIGH;
         // spot drivers get mid priority
-        else if (config.optic[i].type == PRG_TYPE_15)
+        else if (config.channelSetup[i].optic.type == PRG_TYPE_15)
             limiter[i].priority = LIM_PRIO_MID;
         // all others get low priority
         else
@@ -942,9 +993,9 @@ static void getTargets(KD2_target_t* pTargets, uint8_t lightMode)
 
         if (pCh->mode == CHMODE_PITCH)
         {
-            (void)prg_GetComp(pitch, &config.optic[i], &target);
+            (void)prg_GetComp(pitch, &config.channelSetup[i].optic, &target);
             if (isMultiOpticMode)
-                (void)prg_MultiOptic(pitch, &config.optic[i], &target);
+                (void)prg_MultiOptic(pitch, &config.channelSetup[i].optic, &target);
         }
 
         if (target > KD2_TARGET_MAX)
@@ -966,7 +1017,7 @@ static void updateExecute(uint8_t lightMode)
     KD2_target_t     targetsKD2[CHANNEL_CNT] = {0};
     q15_16_t power, tempLimit, voltLimit;
 
-    if (!isModeUsed(lightMode))
+    if (currentPowerMode != BRD_PM_IDLE || !isModeUsed(lightMode))
         return;
 
     // generate targets
@@ -975,8 +1026,8 @@ static void updateExecute(uint8_t lightMode)
     // limit to hardware / settings
     for (uint_fast8_t i = 0; i < CHANNEL_CNT; i++)
     {
-        if (targetsKD2[i] > config.limits[i])
-            targetsKD2[i] = config.limits[i];
+        if (targetsKD2[i] > config.channelSetup[i].outputLimit)
+            targetsKD2[i] = config.channelSetup[i].outputLimit;
     }
 
     // get the voltage and temperature limits
@@ -1031,11 +1082,31 @@ static void updateExecute(uint8_t lightMode)
         q8_t flood, spot;
         flood = targetsKD2[CHANNEL_HELENAFLOOD] >= KD2_TARGET_MAX ? 255 : targetsKD2[CHANNEL_HELENAFLOOD] / 100;
         spot  = targetsKD2[CHANNEL_HELENASPOT] >= KD2_TARGET_MAX ? 255 : targetsKD2[CHANNEL_HELENASPOT] / 100;
-        helenaCode = hbd_SetTargetCurrent(&helenaInst, lastResults.inputVoltage, flood, spot);
+        helenaCode = hbd_SetTargetCurrent(&helenaInst, lastAdcResults.inputVoltage, flood, spot);
         if (helenaCode != HBD_SUCCESS && helenaCode != HBD_ERROR_FORBIDDEN)
         {
             NRF_LOG_ERROR("[BRD]: error %d setting helena current", helenaCode);
         }
+    }
+
+    // calculate current output power
+    /// TODO: read helena board for actual currents
+    for (channelTypes_t i = 0; i <= CHANNEL_CURRENT; i++)
+    {
+        int32_t power;
+        if (i == CHANNEL_HELENAFLOOD)
+            power = lastHelenaResults.currentLeft.current << 3;
+        else if (i == CHANNEL_HELENASPOT)
+            power = lastHelenaResults.currentRight.current << 3;
+        else // if (i == CHANNEL_CURRENT)
+            power = lastAdcResults.ledCurrent;
+        power *= KD2_TARGET_MAX;
+        power /= FULL_CURRENT;  // all driver have the same max output current
+        currentOutputPower[i] = power;
+    }
+    for (channelTypes_t i = CHANNEL_PWM; i < CHANNEL_CNT; i++)
+    {
+        currentOutputPower[i] = targetsKD2[i];
     }
 }
 
@@ -1101,7 +1172,7 @@ static void reorientModule(int16_t* pAccel, int16_t* pGyro)
     pGyro[2] = -1 * i;
 }
 
-/** @brief functionto initialize the bmi160 driver
+/** @brief function to initialize the bmi160 driver
  *
  * @param[out] pAddrs  the address used, 0 if no sensor found
  * @return NRF_SUCCESS, NRF_ERROR_NOT_FOUND or propagated error
@@ -1153,7 +1224,7 @@ static ret_code_t initHelenaDriver(uint8_t* pAddrs)
     }
 }
 
-/** @brief heleper function to check if the backside of the board is assembled
+/** @brief helper function to check if the backside of the board is assembled
  * @note Checks if the 4k7 pull-up resistor on COM pin is available
  */
 static bool isBacksideAssembled()
@@ -1174,6 +1245,7 @@ static bool isBacksideAssembled()
 static void setFeatures(brd_features_t* pFtr, bool isAssembled, uint8_t bmiAddr, uint8_t helenaAddr)
 {
     // minimal setup
+    pFtr->maxNameLenght      = DEVICENAME_LENGHT;
     pFtr->channelCount       = 1;
     pFtr->pChannelTypes      = &channelTypes[CHANNEL_CURRENT];
     pFtr->comSupported.rx    = COM_PIN_NOT_USED;
@@ -1181,7 +1253,7 @@ static void setFeatures(brd_features_t* pFtr, bool isAssembled, uint8_t bmiAddr,
     pFtr->comSupported.dummy = COM_PIN_NOT_USED;
     pFtr->isIMUPresent       = (bool)bmiAddr;
 
-    // two addition channels if helena driver board is present
+    // two additional channels if helena driver board is present
     if (helenaAddr)
     {
         pFtr->channelCount += 2;
@@ -1192,7 +1264,7 @@ static void setFeatures(brd_features_t* pFtr, bool isAssembled, uint8_t bmiAddr,
     if (isAssembled)
     {
         pFtr->channelCount++;
-        //depending on com pin configuaration another channel or com is available
+        //depending on com pin configuration another channel or com is available
         if (config.comPinMode == KD2_COMPIN_PWM)
             pFtr->channelCount++;
         else if (config.comPinMode == KD2_COMPIN_COM)
@@ -1202,6 +1274,20 @@ static void setFeatures(brd_features_t* pFtr, bool isAssembled, uint8_t bmiAddr,
             pFtr->comSupported.dummy = COM_DUMMY;
         }
     }
+}
+
+static void setModes(ble_hps_modes_init_t* pModes, uint16_t channelCount, cht_5int3mode_t const* pFirstChannel)
+{
+    mm_modeConfig_t const* pModesConfig;
+    uint16_t sizeModes = MM_NUM_OF_MODES * sizeof(mm_modeConfig_t);
+    uint16_t sizeChannels = channelCount * MM_NUM_OF_MODES * sizeof(cht_5int3mode_t);
+
+    (void)mm_GetModeConfigs(&pModesConfig); // cannot fail unless fed with null-pointer
+    memcpy(modesBuffer, pModesConfig, sizeModes);
+    memcpy(&modesBuffer[sizeModes], pFirstChannel, sizeChannels);
+
+    pModes->p_mode_config = (ble_hps_mode_config_t*)modesBuffer;
+    pModes->total_size = sizeModes + sizeChannels;
 }
 
 /** @brief function to compare the results of init function with the saved config setup
@@ -1225,7 +1311,7 @@ ret_code_t brd_Init(brd_info_t const* *pInfo)
     uint32_t         secondaryPin;
     uint8_t          bmiAddr, helenaAddr = 0;
 
-    if (pInfo == NULL || *pInfo == NULL)
+    if (pInfo == NULL)
         return NRF_ERROR_NULL;
 
     *pInfo = &brdInfo;
@@ -1249,7 +1335,7 @@ ret_code_t brd_Init(brd_info_t const* *pInfo)
         return errCode;
 
     adcInit.resultHandler = adcResultHander;
-    errCode = KD2_Adc_Init(&adcInit, &lastResults);
+    errCode = KD2_Adc_Init(&adcInit, &lastAdcResults);
     if (errCode != NRF_SUCCESS)
         return errCode;
 
@@ -1264,8 +1350,6 @@ ret_code_t brd_Init(brd_info_t const* *pInfo)
     errCode = initHelenaDriver(&helenaAddr);
     if (errCode != NRF_SUCCESS && errCode != NRF_ERROR_NOT_FOUND)
         return errCode;
-
-    config.comPinMode = KD2_COMPIN_COM; /// TODO: user interface to select if com, button or pwm
 
     KD2_Pwm_init_t pwmInit = KD2_PWM_INIT_ALL_DISABLED;
     if (backsideAssembled)
@@ -1287,11 +1371,13 @@ ret_code_t brd_Init(brd_info_t const* *pInfo)
         return errCode;
 
     // set emergency shutdown current to 125% of configured max. current
-    errCode = setCurrentLimit(config.limits[CHANNEL_CURRENT] + (config.limits[CHANNEL_CURRENT] >> 2));
+    KD2_target_t limit = config.channelSetup[CHANNEL_CURRENT].outputLimit;
+    limit += limit >> 2;
+    errCode = setCurrentLimit(limit);
     if (errCode != NRF_SUCCESS)
         return errCode;
 
-    limiterInit(&lastResults);
+    limiterInit(&lastAdcResults);
 
     if (hasHardwareSetupChanged(backsideAssembled, bmiAddr, helenaAddr))
     {
@@ -1307,13 +1393,18 @@ ret_code_t brd_Init(brd_info_t const* *pInfo)
 
     setFeatures(&features, backsideAssembled, bmiAddr, helenaAddr);
 
+    setModes(&modes, features.channelCount, helenaAddr ? channels.helenaFlood : channels.current);
+
+    errCode = KD2_btle_Init(&features, (bool)bmiAddr);
+    if (errCode != NRF_SUCCESS)
+        return errCode;
+
     return NRF_SUCCESS;
 }
 
 ret_code_t brd_SetPowerMode(brd_powerMode_t newMode)
 {
     pendingPowerMode = newMode;
-    //setMode(newMode, currentLightMode);
 
     return NRF_SUCCESS;
 }
@@ -1321,7 +1412,6 @@ ret_code_t brd_SetPowerMode(brd_powerMode_t newMode)
 ret_code_t brd_SetLightMode(uint8_t newMode)
 {
     pendingLightMode = newMode;
-    //setMode(currentPowerMode, newMode);
 
     return NRF_SUCCESS;
 }
@@ -1345,7 +1435,8 @@ bool brd_Execute(void)
 
     if (messagePrescale == 0)
     {
-        sendMessage();
+        sendLcsMessage();
+        sendHpsMessage();
         messagePrescale = isModeUsed(currentLightMode) ? MSG_PRESCALE_ON : MSG_PRESCALE_IDLE;
 
         // without acceleration sensor idle timer is reset when light is used (and not in an active OFF mode)
@@ -1397,7 +1488,7 @@ ret_code_t brd_UpdateChannelConfig(ble_lcs_ctrlpt_mode_cnfg_t const* pLcs, ds_re
 
 ret_code_t brd_GetChannelConfig(void const** ppData, uint16_t* pSize)
 {
-    if (ppData == NULL || *ppData == NULL || pSize == NULL)
+    if (ppData == NULL || pSize == NULL)
         return NRF_ERROR_NULL;
 
     if (config.helenaBaseAddr)
@@ -1407,6 +1498,43 @@ ret_code_t brd_GetChannelConfig(void const** ppData, uint16_t* pSize)
     *pSize = sizeof(channels.current) * features.channelCount;  /// TODO: as long as all channels use the same size channel type this works
 
     return NRF_SUCCESS;
+}
+
+ret_code_t brd_SetChannelConfig(void const* pData, uint16_t size, ds_reportHandler_t resultHandler)
+{
+    if (pData == NULL)
+        return NRF_ERROR_NULL;
+
+    if (size != sizeof(channels.current) * features.channelCount)
+        return NRF_ERROR_INVALID_LENGTH;
+
+    cht_5int3mode_t* pFirstChannel = config.helenaBaseAddr ? newChannels.channels.helenaFlood : newChannels.channels.current;
+
+    memcpy(pFirstChannel, pData, size);
+
+    if (!isChannelConfigValid(&newChannels.channels))
+        return NRF_ERROR_INVALID_PARAM;
+
+    memcpy(&channels, &newChannels.channels, sizeof(channels));
+
+    setMode(currentPowerMode, currentLightMode);    // the current channel might have been changed, update mode
+
+    return storeChannels(DEFAULT_SET, resultHandler);
+}
+
+ret_code_t brd_SetDeviceName(char const* pNewName, ds_reportHandler_t resultHandler)
+{
+    if (pNewName == NULL)
+        return NRF_ERROR_NULL;
+
+    if (strlen(pNewName) > DEVICENAME_LENGHT)
+        return NRF_ERROR_INVALID_LENGTH;
+
+    strcpy(config.deviceName, pNewName);
+
+    memcpy(&newConfig.config, &config, sizeof(config));
+
+    return storeConfig(resultHandler);
 }
 
 ret_code_t brd_FactoryReset(ds_reportHandler_t resultHandler)
@@ -1424,130 +1552,36 @@ ret_code_t brd_FactoryReset(ds_reportHandler_t resultHandler)
     return ds_Reset(CHANNELS_FILE_ID, resultHandler);
 }
 
-/// TODO: test config api and modify for dynamic channel count
-
-ret_code_t KD2_GetChannelLimits(KD2_target_t* pLimits, uint8_t* pSize)
+ret_code_t KD2_GetChannelSetup(KD2_channelSetup_t* pSetup, uint8_t channel)
 {
-    if (pLimits == NULL || pSize == NULL)
+    if (pSetup == NULL)
         return NRF_ERROR_NULL;
 
-    if (*pSize < features.channelCount)
-        return NRF_ERROR_NO_MEM;
+    if (channel >= features.channelCount)
+        return NRF_ERROR_INVALID_PARAM;
 
-    KD2_target_t* pFirstChannel =
-        config.helenaBaseAddr ? &config.limits[CHANNEL_HELENAFLOOD] : &config.limits[CHANNEL_CURRENT];
+    KD2_channelSetup_t const* pFirstChannel =
+        config.helenaBaseAddr ? &config.channelSetup[CHANNEL_HELENAFLOOD] : &config.channelSetup[CHANNEL_CURRENT];
 
-    for (uint_fast8_t i = 0; i < features.channelCount; i++)
-    {
-        pLimits[i] = pFirstChannel[i];
-    }
-    *pSize = features.channelCount;
+    memcpy(pSetup, &pFirstChannel[channel], sizeof(KD2_channelSetup_t));
 
     return NRF_SUCCESS;
 }
 
-ret_code_t KD2_SetChannelLimits(KD2_target_t const* pLimits, uint8_t cnt, ds_reportHandler_t resultHandler)
+ret_code_t KD2_SetChannelSetup(KD2_channelSetup_t const* pSetup, uint8_t channel, ds_reportHandler_t resultHandler)
 {
-    if (pLimits == NULL || resultHandler == NULL)
+    if (pSetup == NULL)
         return NRF_ERROR_NULL;
 
-    if (cnt != features.channelCount)
+    if (channel >= features.channelCount || !isChannelSetupValid(pSetup))
         return NRF_ERROR_INVALID_PARAM;
+
+    KD2_channelSetup_t* pFirstChannel =
+        config.helenaBaseAddr ? &config.channelSetup[CHANNEL_HELENAFLOOD] : &config.channelSetup[CHANNEL_CURRENT];
+
+    memcpy(&pFirstChannel[channel], pSetup, sizeof(KD2_channelSetup_t));
 
     memcpy(&newConfig.config, &config, sizeof(config));
-
-    KD2_target_t* pFirstChannel =
-        config.helenaBaseAddr ? &newConfig.config.limits[CHANNEL_HELENAFLOOD] : &newConfig.config.limits[CHANNEL_CURRENT];
-
-    for (uint_fast8_t i = 0; i < features.channelCount; i++)
-    {
-        pFirstChannel[i] = (KD2_target_t)pLimits[i];
-    }
-
-    if (isChannelLimitValid(newConfig.config.limits, features.channelCount))
-        return NRF_ERROR_INVALID_PARAM;
-
-    memcpy(config.limits, newConfig.config.limits, sizeof(config.limits));
-
-    return storeConfig(resultHandler);
-}
-
-ret_code_t KD2_GetChannelPower(q6_10_t* pPower, uint8_t* pSize)
-{
-    if (pPower == NULL || pSize == NULL)
-        return NRF_ERROR_NULL;
-
-    if (*pSize < features.channelCount)
-        return NRF_ERROR_NO_MEM;
-
-    q6_10_t* pFirstChannel =
-        config.helenaBaseAddr ? &config.outputPower[CHANNEL_HELENAFLOOD] : &config.outputPower[CHANNEL_CURRENT];
-
-    for (uint_fast8_t i = 0; i < features.channelCount; i++)
-    {
-        pPower[i] = pFirstChannel[i];
-    }
-    *pSize = features.channelCount;
-
-    return NRF_SUCCESS;
-}
-
-ret_code_t KD2_SetChannelPower(q6_10_t const* pPower, uint8_t cnt, ds_reportHandler_t resultHandler)
-{
-    if (pPower == NULL || resultHandler == NULL)
-        return NRF_ERROR_NULL;
-
-    if (cnt != features.channelCount || !isChannelPowerValid(pPower, cnt))
-        return NRF_ERROR_INVALID_PARAM;
-
-    memcpy(&newConfig.config, &config, sizeof(config));
-
-    q6_10_t* pFirstChannel =
-        config.helenaBaseAddr ? &newConfig.config.outputPower[CHANNEL_HELENAFLOOD] : &newConfig.config.outputPower[CHANNEL_CURRENT];
-
-    for (uint_fast8_t i = 0; i < features.channelCount; i++)
-    {
-        pFirstChannel[i] = pPower[i];
-    }
-
-    memcpy(config.outputPower, newConfig.config.outputPower, sizeof(config.outputPower));
-
-    return storeConfig(resultHandler);
-}
-
-ret_code_t KD2_GetChannelOptics(prg_optic_t* pOptics, uint8_t* pSize)
-{
-    if (pOptics == NULL || pSize == NULL)
-        return NRF_ERROR_NULL;
-
-    if (*pSize < features.channelCount)
-        return NRF_ERROR_NO_MEM;
-
-    prg_optic_t* pFirstChannel =
-        config.helenaBaseAddr ? &config.optic[CHANNEL_HELENAFLOOD] : &config.optic[CHANNEL_CURRENT];
-
-    memcpy(pOptics, pFirstChannel, sizeof(prg_opticType_t) * features.channelCount);
-    *pSize = features.channelCount;
-
-    return NRF_SUCCESS;
-}
-
-ret_code_t KD2_SetChannelOptics(prg_optic_t const* pOptics, uint8_t cnt, ds_reportHandler_t resultHandler)
-{
-    if (pOptics == NULL || resultHandler == NULL)
-        return NRF_ERROR_NULL;
-
-    if (cnt != features.channelCount || !isChannelOpticValid(pOptics, cnt))
-        return NRF_ERROR_INVALID_PARAM;
-
-    memcpy(&newConfig.config, &config, sizeof(config));
-
-    prg_optic_t* pFirstChannel =
-        config.helenaBaseAddr ? &newConfig.config.optic[CHANNEL_HELENAFLOOD] : &newConfig.config.optic[CHANNEL_CURRENT];
-
-    memcpy(pFirstChannel, pOptics, sizeof(prg_opticType_t) * features.channelCount);
-
-    memcpy(config.optic, pOptics, sizeof(config.optic));
 
     return storeConfig(resultHandler);
 }
@@ -1557,7 +1591,7 @@ ret_code_t KD2_GetCompensation(KD2_adcCompensation_t* pComp)
     if (pComp == NULL)
         return NRF_ERROR_NULL;
 
-    *pComp = config.comp;
+    memcpy(pComp, &config.comp, sizeof(KD2_adcCompensation_t));
 
     return NRF_SUCCESS;
 }
@@ -1576,11 +1610,9 @@ ret_code_t KD2_SetCompensation(KD2_adcCompensation_t const* pComp, ds_reportHand
         return NRF_ERROR_INVALID_PARAM;
     }
 
-    memcpy(&newConfig.config, &config, sizeof(config));
-
-    memcpy(&newConfig.config.comp, pComp, sizeof(KD2_adcCompensation_t));
-
     memcpy(&config.comp, pComp, sizeof(KD2_adcCompensation_t));
+
+    memcpy(&newConfig.config, &config, sizeof(config));
 
     return storeConfig(resultHandler);
 }
@@ -1600,11 +1632,9 @@ ret_code_t KD2_SetComPinMode(KD2_comPinMode_t mode, ds_reportHandler_t resultHan
     if (!isComPinModeValid(mode))
         return NRF_ERROR_INVALID_PARAM;
 
-    memcpy(&newConfig.config, &config, sizeof(config));
-
-    newConfig.config.comPinMode = mode;
-
     config.comPinMode = mode;
+
+    memcpy(&newConfig.config, &config, sizeof(config));
 
     return storeConfig(resultHandler);
 }

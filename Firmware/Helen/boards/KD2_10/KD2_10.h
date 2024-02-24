@@ -16,6 +16,11 @@
 #include "helena_base_driver.h"
 
 /* Exported types ------------------------------------------------------------*/
+typedef int16_t  KD2_target_t;          // internal target values, max. value 100*256
+
+typedef uint16_t q6_10_t;               // fix point integer used for power
+typedef uint16_t q1_15_t;               // fix point integer used for gain factor
+
 typedef enum
 {
     KD2_PWR_OFF     = BRD_PM_OFF,       // complete off, CPU in system off, no wakeup expected
@@ -24,6 +29,13 @@ typedef enum
     KD2_PWR_ON                          // operational, light on
 } KD2_powerMode_t;
 
+typedef struct
+{
+    q6_10_t outputPower;
+    KD2_target_t outputLimit;
+    prg_optic_t optic;
+} KD2_channelSetup_t;
+
 typedef enum
 {
     KD2_COMPIN_NOTUSED = 0,             // com pin not used at all
@@ -31,11 +43,6 @@ typedef enum
     KD2_COMPIN_BUTTON,                  // com pin used for external button
     KD2_COMPIN_PWM                      // com pin used as open drain PWM signal output
 } KD2_comPinMode_t;
-
-typedef int16_t KD2_target_t;           // internal target values, max. value 100*256
-
-typedef uint16_t q6_10_t;               // fix point integer used for power
-typedef uint16_t q1_15_t;               // fix point integer used for gain factor
 
 typedef struct
 {
@@ -51,12 +58,33 @@ typedef struct
 } KD2_adcCompensation_t;
 
 /* Exported constants --------------------------------------------------------*/
-#define KD2_TARGET_MAX  (100 << 8)
-#define KD2_TARGET_MIN  0
+#define KD2_TARGET_MAX      (100 << 8)
+#define KD2_TARGET_MIN      0
+
+#define KD2_PITCH_OFF_MAX   (1 << 12)
+#define KD2_PITCH_OFF_MIN   (-1 * KD2_PITCH_OFF_MAX)
+
+#define KD2_OPTIC_TYPE_NA   0xFF
 
 /* Exported macros -----------------------------------------------------------*/
 
 /* Exported functions ------------------------------------------------------- */
+/** @brief function to retrieve a channel setup
+ *
+ * @param[out] pSetup   structure to store the setup
+ * @param[in]  channel  the desired channel
+ * @return NRF_SUCCESS, NRF_ERROR_NULL, NRF_ERROR_INVALID_PARAM for invalid channel
+ */
+ret_code_t KD2_GetChannelSetup(KD2_channelSetup_t* pSetup, uint8_t channel);
+
+/** @brief function to set a channel setup
+ *
+ * @param[in]  pSetup   the new setup
+ * @param[in]  channel  the desired channel
+ * @return NRF_SUCCESS, NRF_ERROR_NULL, NRF_ERROR_INVALID_PARAM for invalid channel
+ */
+ret_code_t KD2_SetChannelSetup(KD2_channelSetup_t const* pSetup, uint8_t channel, ds_reportHandler_t resultHandler);
+
 /** @brief function to retrieve the channel limits
  *
  * @note the provided array size should be at least as high as the reported
@@ -65,7 +93,7 @@ typedef struct
  * @param[in/out] pSize   in: the available size, out: the number of channels
  * @return NRF_SUCCESS, NRF_ERROR_NULL, NRF_ERROR_NO_MEM if buffer is to small
  */
-ret_code_t KD2_GetChannelLimits(KD2_target_t* pLimits, uint8_t* pSize);
+//ret_code_t KD2_GetChannelLimits(KD2_target_t* pLimits, uint8_t* pSize);
 
 /** @brief function to set new channel limits
  *
@@ -73,7 +101,7 @@ ret_code_t KD2_GetChannelLimits(KD2_target_t* pLimits, uint8_t* pSize);
  * @param[in] cnt     the number of channels
  * @return NRF_SUCCESS, NRF_ERROR_NULL, NRF_ERROR_INVALID_PARAMS if cnt does not match channel cnt
  */
-ret_code_t KD2_SetChannelLimits(KD2_target_t const* pLimits, uint8_t cnt, ds_reportHandler_t resultHandler);
+//ret_code_t KD2_SetChannelLimits(KD2_target_t const* pLimits, uint8_t cnt, ds_reportHandler_t resultHandler);
 
 /** @brief function to retrieve the channel power
  *
@@ -83,7 +111,7 @@ ret_code_t KD2_SetChannelLimits(KD2_target_t const* pLimits, uint8_t cnt, ds_rep
  * @param[in/out] pSize  in: the available size, out: the number of channels
  * @return NRF_SUCCESS, NRF_ERROR_NULL, NRF_ERROR_NO_MEM if buffer is to small
  */
-ret_code_t KD2_GetChannelPower(q6_10_t* pPower, uint8_t* pSize);
+//ret_code_t KD2_GetChannelPower(q6_10_t* pPower, uint8_t* pSize);
 
 /** @brief function to set new channel power
  *
@@ -91,7 +119,7 @@ ret_code_t KD2_GetChannelPower(q6_10_t* pPower, uint8_t* pSize);
  * @param[in] cnt    the number of channels
  * @return NRF_SUCCESS, NRF_ERROR_NULL, NRF_ERROR_INVALID_PARAMS if cnt does not match channel cnt
  */
-ret_code_t KD2_SetChannelPower(q6_10_t const* pPower, uint8_t cnt, ds_reportHandler_t resultHandler);
+//ret_code_t KD2_SetChannelPower(q6_10_t const* pPower, uint8_t cnt, ds_reportHandler_t resultHandler);
 
 /** @brief function to retrieve the channel power
  *
@@ -101,7 +129,7 @@ ret_code_t KD2_SetChannelPower(q6_10_t const* pPower, uint8_t cnt, ds_reportHand
  * @param[in/out] pSize  in: the available size, out: the number of channels
  * @return NRF_SUCCESS, NRF_ERROR_NULL, NRF_ERROR_NO_MEM if buffer is to small
  */
-ret_code_t KD2_GetChannelOptics(prg_optic_t* pOptics, uint8_t* pSize);
+//ret_code_t KD2_GetChannelOptics(prg_optic_t* pOptics, uint8_t* pSize);
 
 /** @brief function to set new channel power
  *
@@ -109,7 +137,7 @@ ret_code_t KD2_GetChannelOptics(prg_optic_t* pOptics, uint8_t* pSize);
  * @param[in] cnt    the number of channels
  * @return NRF_SUCCESS, NRF_ERROR_NULL, NRF_ERROR_INVALID_PARAMS if cnt does not match channel cnt
  */
-ret_code_t KD2_SetChannelOptics(prg_optic_t const* pOptics, uint8_t cnt, ds_reportHandler_t resultHandler);
+//ret_code_t KD2_SetChannelOptics(prg_optic_t const* pOptics, uint8_t cnt, ds_reportHandler_t resultHandler);
 
 /** @brief function to get the adc compensation values
  *
@@ -157,6 +185,7 @@ ret_code_t KD2_GetHelenaCompensation(hbd_calibData_t* pComp);
  * @param[out] pComp
  * @return NRF_SUCCESS, NRF_ERROR_NULL, NRF_ERROR_NOT_FOUND, NRF_ERROR_NOT_SUPPORTED, NRF_ERROR_INVALID_PARAM
  */
+ /// TODO: this function used I2C and should be scheduled in main context
 ret_code_t KD2_SetHelenaCompensation(hbd_calibData_t* pComp);
 
 #endif // KD2_10_H_INCLUDED

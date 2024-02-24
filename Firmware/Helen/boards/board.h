@@ -21,6 +21,9 @@
 #include "data_storage.h"
 
 /* Exported types ------------------------------------------------------------*/
+
+/// TODO: rearrange this mess!
+
 typedef struct
 {
     uint32_t rx;                        // pin used for receiving
@@ -30,6 +33,8 @@ typedef struct
 
 typedef struct
 {
+    uint16_t           maxNameLenght;   // the maximum length of the device name, set to 0 if change is not supported
+                                        // max value is BLE_GAP_DEVNAME_DEFAULT_LEN (31)
     uint16_t           channelCount;    // number of channels
     cht_types_t const* pChannelTypes;   // types of channels (pointer to array with channelCount members)
     brd_comPins_t      comSupported;    // the com pins if available
@@ -38,9 +43,16 @@ typedef struct
 
 typedef struct
 {
-    brd_features_t const* pFeatures;
-    btle_info_t const*    pInfo;
+    brd_features_t const*       pFeatures;
+    btle_info_t const*          pInfo;
+    ble_hps_modes_init_t const* pModes;
+    ble_user_mem_block_t        qwrBuffer;
 } brd_info_t;
+
+typedef struct
+{
+
+} brd_init_t;
 
 typedef enum
 {
@@ -68,7 +80,7 @@ ret_code_t brd_Init(brd_info_t const* *pInfo);
  */
 ret_code_t brd_SetPowerMode(brd_powerMode_t newMode);
 
-/** @brief function to set the desired power mode
+/** @brief function to set the desired light mode
  *
  * @param[in] newMode  the new mode.
  */
@@ -106,6 +118,24 @@ ret_code_t brd_UpdateChannelConfig(ble_lcs_ctrlpt_mode_cnfg_t const* pLcs, ds_re
  * @return NRF_SUCCESS, NRF_ERROR_NULL
  */
 ret_code_t brd_GetChannelConfig(void const** ppData, uint16_t* pSize);
+
+/** @brief function to set a new channel config
+ *
+ * @param[in] pData void const* the pointer to the arrays of channel configuration
+ * @param[in] size uint16_t     the size of the arrays
+ * @param[in] resultHandler     the handler to use to report the result
+ * @return    NRF_SUCCESS, NRF_ERROR_INVALID_LENGTH, NRF_ERROR_INVALID_PARAM or an propagated error code *
+ */
+ret_code_t brd_SetChannelConfig(void const* pData, uint16_t size, ds_reportHandler_t resultHandler);
+
+/** @brief function to set a new device name, if device name changing is not supported just return NRF_SUCCESS
+ *
+ * @param[in] pNewName char const* the new device name
+ * @param[in] resultHandler ds_reportHandler_t
+ * @return ret_code_t       the handler to use to report the result
+ * @return    NRF_SUCCESS, NRF_ERROR_INVALID_LENGTH or an propagated error code *
+ */
+ret_code_t brd_SetDeviceName(char const* pNewName, ds_reportHandler_t resultHandler);
 
 /** @brief function to initiate the procedure to delete all internal settings
  *

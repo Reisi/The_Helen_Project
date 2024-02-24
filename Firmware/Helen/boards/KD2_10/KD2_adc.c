@@ -388,6 +388,7 @@ static void executeTemp()
 
         errCode = sd_temp_get(&rawTemp);
         APP_ERROR_CHECK(errCode);
+
         temperature.lastResult = convertTemp(rawTemp);
 
         temperature.prescale = powerMode == KD2_PWR_ON ? TEMP_PRESCALE_ON : TEMP_PRESCALE_IDLE;

@@ -95,6 +95,8 @@ static void sendResult(uint16_t fileId, ret_code_t errCode)
 {
     userHandlers_t* pUserHandler = getHandler(fileId);
 
+    //NRF_LOG_INFO("[DS]: result %d for user %d", errCode, fileId);
+
     if (pUserHandler == NULL)   // no data for this user
         return;
 
