@@ -38,11 +38,12 @@ typedef enum
  */
 typedef enum
 {
-    BLE_HPS_C_CP_CMD_REQ_MODE     = 1,    /**< command to request the current mode of the remote device */
-    BLE_HPS_C_CP_CMD_SET_MODE     = 2,    /**< command to request to set the mode of the remote device */
-    BLE_HPS_C_CP_CMD_REQ_SEARCH   = 3,    /**< command to request the start of the search procedure */
-    BLE_HPS_C_CP_CMD_REQ_F_RESET  = 5,    /**< command to request a factory reset */
-    BLE_HPS_C_CP_CMD_RESPONSE     = 32    /**< response code */
+    BLE_HPS_C_CP_CMD_REQ_MODE          = 1, /**< command to request the current mode of the remote device */
+    BLE_HPS_C_CP_CMD_SET_MODE          = 2, /**< command to request to set the mode of the remote device */
+    BLE_HPS_C_CP_CMD_REQ_SEARCH        = 3, /**< command to request the start of the search procedure */
+    BLE_HPS_C_CP_CMD_REQ_F_RESET       = 5, /**< command to request a factory reset */
+    BLE_HPS_C_CP_CMD_SET_MODE_OVERRIDE = 8, /**< command to override current mode */
+    BLE_HPS_C_CP_CMD_RESPONSE          = 32 /**< response code */
 } ble_hps_c_cpc_t;
 
 /**@brief Helen Project Service Control Point response values
@@ -145,21 +146,29 @@ struct ble_hps_c_s
  * @{
  */
 
+ /**@brief Control Point mode override channel configuration structure */
+ typedef struct
+{
+    void const * p_config;
+    uint16_t     size;
+} ble_hps_c_cp_channel_config_t;
+
 /**@brief Control Point send command structure */
 typedef struct
 {
     ble_hps_c_cpc_t command;
     union
     {
-        uint8_t     mode_to_set; /**< mode to set. This field will be used for the command @ref BLE_HPS_C_CP_CMD_SET_MODE. */
+        uint8_t                               mode_to_set;      /**< mode to set. This field will be used for the command @ref BLE_HPS_C_CP_CMD_SET_MODE. */
+        ble_hps_c_cp_channel_config_t const * p_channel_config; /**< the channel config. This field will be used for the command @ref BLE_HPS_C_CP_CMD_MODE_OVERRIDE. */
     } params;
 } ble_hps_c_cp_write_t;
 
 /**@brief Helen Project Service Client initialization structure. */
 typedef struct
 {
-    ble_hps_c_evt_handler_t evt_handler;  /**< Event handler to be called by the Light Control Service Client module whenever there is an event related to the Light Control Service. */
-    ble_srv_error_handler_t error_handler;/**< Error handler to be called by the Light Control Service Client module whenever there is an error related to the Light Control Service. */
+    ble_hps_c_evt_handler_t evt_handler;  /**< Event handler to be called by the Helen Project Service Client module whenever there is an event related to the Helen Project Service. */
+    ble_srv_error_handler_t error_handler;/**< Error handler to be called by the Helen Project Service Client module whenever there is an error related to the Helen Project Service. */
     nrf_ble_gq_t          * p_gatt_queue; /**< Pointer to BLE GATT Queue instance. */
 } ble_hps_c_init_t;
 

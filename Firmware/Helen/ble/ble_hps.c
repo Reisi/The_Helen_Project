@@ -23,7 +23,7 @@
 #define BLE_HPS_F_MIN_CHAR_LEN           4       /**< minimum length of the feature characteristic */
 
 #define BLE_HPS_CP_MIN_CHAR_LEN          1       /**< minimum length of the control point characteristic */
-#define BLE_HPS_CP_MAX_CHAR_LEN          3       /**< maximum length of the control point characteristic */
+#define BLE_HPS_CP_MAX_CHAR_LEN          20      /**< maximum length of the control point characteristic */
 
 /* Section variable ----------------------------------------------------------*/
 NRF_SECTION_DEF(ble_hps_brd_char, ble_hps_brd_char_t);
@@ -269,11 +269,6 @@ static void on_disconnect(ble_hps_t * p_hps, ble_evt_t const * p_ble_evt)
         }
         return;
     }
-
-    /*if (p_hps->modes.conn_handle == p_client->conn_handle)
-    {
-        p_hps->modes.conn_handle = BLE_CONN_HANDLE_INVALID;
-    }*/
 
     if (p_client->is_m_notfy_enabled)
     {
@@ -534,6 +529,12 @@ static bool cp_decode(uint8_t const* p_data, uint16_t len,
             p_decoded->mode_request = p_data[i];
             return true;
         }
+
+    case BLE_HPS_CP_SET_MODE_OVERRIDE:
+        p_response->encoded_rsp[p_response->len++] = BLE_HPS_CP_RSP_VAL_SUCCESS;
+        p_decoded->channel_config.p_config = &p_data[i];
+        p_decoded->channel_config.size = len - 1;
+        return true;
 
     case BLE_HPS_CP_REQ_MODE:
     case BLE_HPS_CP_REQ_SEARCH:

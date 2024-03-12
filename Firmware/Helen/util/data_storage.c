@@ -254,7 +254,7 @@ ret_code_t ds_Read(uint16_t fileId, uint16_t recordKey, void const** ppData, uin
         if (errCode != NRF_SUCCESS)
             return errCode;
     }
-    return NRF_SUCCESS;
+    return errCode;
 }
 
 ret_code_t ds_Write(uint16_t fileId, uint16_t recordKey, void const* pData, uint16_t lengthWords, ds_reportHandler_t pHandler)

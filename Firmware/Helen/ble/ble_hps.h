@@ -49,6 +49,7 @@ typedef enum
     BLE_HPS_CP_SET_MODE          = 2,
     BLE_HPS_CP_REQ_SEARCH        = 3,
     BLE_HPS_CP_REQ_FACTORY_RESET = 5,
+    BLE_HPS_CP_SET_MODE_OVERRIDE = 8,
     BLE_HPS_CP_RESPONSE_CODE     = 32,
 } ble_hps_cp_opcode_t;
 
@@ -106,10 +107,22 @@ typedef struct
     uint16_t                      total_size;       /**< total size of characteristic in bytes */
 } ble_hps_modes_t;
 
+/** @brief the control point event parameters for @ref BLE_HPS_CP_REQ_MODE_OVERRIDE */
+typedef struct
+{
+    void const * p_config;
+    uint16_t     size;
+} ble_hps_cp_channel_config_t;
+
+/** @brief the event parameters for @ref BLE_HPS_EVT_CP_WRITE */
 typedef struct
 {
     ble_hps_cp_opcode_t opcode;
-    uint8_t             mode_request;
+    union
+    {
+        uint8_t                     mode_request;       /**< the requested mode for @ref BLE_HPS_CP_REQ_MODE */
+        ble_hps_cp_channel_config_t channel_config;   /**< the channel configuration for @ref BLE_HPS_CP_REQ_MODE_OVERRIDE */
+    };
 } ble_hps_cp_t;
 
 /** @brief event parameters */
@@ -160,6 +173,7 @@ typedef struct
     uint16_t mode_set_supported       : 1;  /**< indicating if mode setting is supported */
     uint16_t search_request_supported : 1;  /**< indicating if search can be requested */
     uint16_t factory_reset_supported  : 1;  /**< indicating if a device factory reset can be requested */
+    uint16_t mode_override_supported  : 1;  /**< indicating if mode overriding is supported */
 } ble_hps_f_flags_t;
 
 /** @ref feature characteristic initialization structure */

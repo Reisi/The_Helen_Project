@@ -86,6 +86,12 @@ ret_code_t brd_SetPowerMode(brd_powerMode_t newMode);
  */
 ret_code_t brd_SetLightMode(uint8_t newMode);
 
+/** @brief function to temporary override the channel configuration for the current mode
+ *
+ * @param[in] pConfig ble_hps_cp_channel_config_t const*
+ */
+ret_code_t brd_OverrideMode(ble_hps_cp_channel_config_t const* pConfig);
+
 /** @brief execute function that will be called in the main loop
  *
  * @param[in] currentMode   the current mode, in standby and off mode ignore this

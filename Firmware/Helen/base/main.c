@@ -584,6 +584,14 @@ static bool hpsEventHandler(ble_hps_evt_t const * pEvt)
             (void)hmi_RequestEvent(HMI_EVT_FACTORYRESET, &hmiParam);
             break;
 
+        case BLE_HPS_CP_SET_MODE_OVERRIDE:
+        {
+            ret_code_t errCode = brd_OverrideMode(&pEvt->params.ctrl_pt.channel_config);
+            if (errCode == NRF_SUCCESS)
+                return true;
+            else
+                return false;
+        }
         default:
             return false;
         }
@@ -631,6 +639,7 @@ static ret_code_t bluetoothInit(brd_info_t const* pBrdInfo)//btle_info_t const* 
     hpsInit.features.flags.mode_set_supported = true;   /// TODO shift to board specific code
     hpsInit.features.flags.search_request_supported = true;
     hpsInit.features.flags.factory_reset_supported = true;
+    hpsInit.features.flags.mode_override_supported = true;
     hpsInit.modes = *(pBrdInfo->pModes);
     hpsInit.evt_handler = hpsEventHandler;
 
@@ -817,10 +826,12 @@ int main(void)
 
     errCode = brd_SetPowerMode(BRD_PM_IDLE);
     APP_ERROR_CHECK(errCode);
+
     if (initMode == MM_MODE_OFF)
         initMode = mm_GetOffMode();
     errCode = brd_SetLightMode(initMode);
     APP_ERROR_CHECK(errCode);
+
     errCode = lm_SetExposureMode(LM_EXP_LOW_LATENCY);
     APP_ERROR_CHECK(errCode);
 

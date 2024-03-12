@@ -11,10 +11,10 @@
 #define VERSION_H_INCLUDED
 
 #define VERSION_MAJOR   3
-#define VERSION_MINOR   0
+#define VERSION_MINOR   1
 #define VERSION_PATCH   0
 
-#define VERSION_LEVEL   "beta"
+//#define VERSION_LEVEL   "beta"
 
 #ifndef VERSION_MAJOR
 #error "at least VERSION_MAJOR is necessary"
