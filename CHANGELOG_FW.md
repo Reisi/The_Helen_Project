@@ -3,6 +3,15 @@ All notable changes to the Helen firmware will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## [3.1.1] - 2024-06-20
+### Fixed
+- some minor bugs
+
+### Known Issues
+- unstable regulator at low currents -> visible flickering
+- voltage limiter has delay
+- temperature limiter overshoots
+
 ## [3.1.0] - 2024-03-12
 ### Added
 - override mode (immediately see changes while configure modes in the app)

@@ -39,6 +39,8 @@
 #define HELENABASE_RA_GAINRIGHT         0x0E
 #define HELENABASE_RA_XOR               0x0F
 
+#define HELENABASE_REGISTER_CNT         16
+
 #define HELENABASE_CRA_SLEEP_OFFSET     4
 #define HELENABASE_CRA_ADCRATE_OFFSET   0
 
@@ -139,15 +141,45 @@ static uint8_t baseAdresses[] =
     HELENABASE_ADDRESS
 };
 
+static uint8_t resetValue[3] =
+{
+    0x16, 0x00, 0x00
+};
+
 /* Private variables ---------------------------------------------------------*/
 static hbd_read_t read;
 static hbd_write_t write;
 
 /* Private functions ---------------------------------------------------------*/
-static hbd_retVal_t initialize(hbd_inst_t* pInst, uint8_t* pCnt)
+static void decodeSamplingData(hbd_firmwareRev_t fwRev, uint8_t const* pReg, hbd_samplingData_t* pData)
+{
+    uint_fast16_t i;
+    // left driver current information
+    i = ((uint_fast16_t)pReg[0] << 8) | pReg[1];
+    pData->currentLeft.maxDC = i & (1<<13);
+    pData->currentLeft.minDC = i & (1<<12);
+    if (fwRev == HDB_FWREV_BILLY)
+        pData->currentLeft.current = REGISTERVALUE_TO_AMPEREQ10_BILLY(i & 0x0FFF);
+    else
+        pData->currentLeft.current = REGISTERVALUE_TO_AMPEREQ10(i & 0x0FFF);
+    // right driver current information
+    i = ((uint_fast16_t)pReg[2] << 8) | pReg[3];
+    pData->currentRight.maxDC = i & (1<<13);
+    pData->currentRight.minDC = i & (1<<12);
+    if (fwRev == HDB_FWREV_BILLY)
+        pData->currentRight.current = REGISTERVALUE_TO_AMPEREQ10_BILLY(i & 0x0FFF);
+    else
+        pData->currentRight.current = REGISTERVALUE_TO_AMPEREQ10(i & 0x0FFF);
+    // temperature information
+    i = ((uint_fast16_t)pReg[4] << 8) | pReg[5];
+    pData->temperature = REGISTERVALUE_TO_KELVINQ4(i & 0x0FFF);
+}
+
+static hbd_retVal_t initialize(hbd_inst_t* pInst, hbd_samplingData_t* pData, uint8_t* pCnt, bool reset)
 {
     hbd_retVal_t retVal;
     uint8_t cnt;
+    bool powerUpDelay = false;
 
     cnt = *pCnt;
     *pCnt = 0;
@@ -157,15 +189,26 @@ static hbd_retVal_t initialize(hbd_inst_t* pInst, uint8_t* pCnt)
         pInst[i].fwRev = HBD_FWREV_UNKOWN;
     }
 
-    // on power on the integrated bootloader waits 250ms
-    /// TODO delay is only necessary on power up
-    nrf_delay_ms(250);
+#ifdef HDB_FULL_MIRROR
+    uint8_t* pMirror = pInst->regMirror;
+#else
+    uint8_t buffer[HELENABASE_REGISTER_CNT];
+    uint8_t* pMirror = buffer;
+#endif // HDB_FULL_MIRROR
 
     for (uint_fast8_t i = 0; i < sizeof(baseAdresses) && *pCnt < cnt; i++)
     {
-        uint8_t* pMirror = pInst[*pCnt].regMirror;
+        //uint8_t* pMirror = pInst[*pCnt].regMirror;
 
-        retVal = READ(baseAdresses[i], HELENABASE_RA_CONFIG, pMirror, sizeof(pInst[*pCnt].regMirror));
+        retVal = READ(baseAdresses[i], HELENABASE_RA_CONFIG, pMirror, HELENABASE_REGISTER_CNT);
+        // driver has a bootloader which waits 250ms after power up, so if the first read fails,
+        // just wait 250ms (only one time) and try again
+        if (retVal != HBD_SUCCESS && !powerUpDelay)
+        {
+            nrf_delay_ms(250);
+            retVal = READ(baseAdresses[i], HELENABASE_RA_CONFIG, pMirror, HELENABASE_REGISTER_CNT);
+            powerUpDelay = true;
+        }
         if (retVal == HBD_SUCCESS)
         {
             pInst[*pCnt].address = baseAdresses[i];
@@ -178,6 +221,18 @@ static hbd_retVal_t initialize(hbd_inst_t* pInst, uint8_t* pCnt)
                 pInst[*pCnt].fwRev = HBD_FWREV_11;
             else
                 pInst[*pCnt].fwRev = HBD_FWREV_12;
+
+            if (pData != NULL)
+            {
+                decodeSamplingData(pInst->fwRev, &pMirror[HELENABASE_RA_STATUSSDL_H], &pData[*pCnt]);
+            }
+
+#ifndef HDB_FULL_MIRROR
+            memcpy(pInst[*pCnt].regMirror, pMirror, sizeof(pInst[*pCnt].regMirror));
+#endif // HDB_FULL_MIRROR
+
+            if (reset)
+                (void)WRITE(baseAdresses[i], HELENABASE_RA_CONFIG, resetValue, sizeof(resetValue));
 
             *pCnt += 1;
         }
@@ -198,30 +253,6 @@ static void decodeConfig(uint8_t pReg, hbd_config_t* pConfig)
     pConfig->sampleRate = pReg & ((1 << HELENABASE_CRA_SLEEP_OFFSET) - 1);
 }
 
-static void decodeSamplingData(hbd_inst_t const* pInst, uint8_t const* pReg, hbd_samplingData_t* pData)
-{
-    uint_fast16_t i;
-    // left driver current information
-    i = ((uint_fast16_t)pReg[0] << 8) | pReg[1];
-    pData->currentLeft.maxDC = i & (1<<13);
-    pData->currentLeft.minDC = i & (1<<12);
-    if (pInst->fwRev == HDB_FWREV_BILLY)
-        pData->currentLeft.current = REGISTERVALUE_TO_AMPEREQ10_BILLY(i & 0x0FFF);
-    else
-        pData->currentLeft.current = REGISTERVALUE_TO_AMPEREQ10(i & 0x0FFF);
-    // right driver current information
-    i = ((uint_fast16_t)pReg[2] << 8) | pReg[3];
-    pData->currentRight.maxDC = i & (1<<13);
-    pData->currentRight.minDC = i & (1<<12);
-    if (pInst->fwRev == HDB_FWREV_BILLY)
-        pData->currentRight.current = REGISTERVALUE_TO_AMPEREQ10_BILLY(i & 0x0FFF);
-    else
-        pData->currentRight.current = REGISTERVALUE_TO_AMPEREQ10(i & 0x0FFF);
-    // temperature information
-    i = ((uint_fast16_t)pReg[4] << 8) | pReg[5];
-    pData->temperature = REGISTERVALUE_TO_KELVINQ4(i & 0x0FFF);
-}
-
 static bool encodeCalibrationData(hbd_calibData_t const* pData, uint8_t* pReg)
 {
     if (pData->gainLeft < HELENABASE_GAIN_MIN || pData->gainRight < HELENABASE_GAIN_MIN)
@@ -239,12 +270,11 @@ static bool encodeCalibrationData(hbd_calibData_t const* pData, uint8_t* pReg)
     return true;
 }
 
-static void decodeCalibrationData(hbd_inst_t const* pInst, hbd_calibData_t* pData)
+static void decodeCalibrationData(uint8_t const* pRaw, hbd_calibData_t* pData)
 {
-    pData->temperatureOffset = (q13_2_t)((uint_fast16_t)pInst->regMirror[HELENABASE_RA_TEMPOFFSET_H] << 8 |
-                                         pInst->regMirror[HELENABASE_RA_TEMPOFFSET_L]);
-    pData->gainLeft = pInst->regMirror[HELENABASE_RA_GAINLEFT];
-    pData->gainRight = pInst->regMirror[HELENABASE_RA_GAINRIGHT];
+    pData->temperatureOffset = (q13_2_t)((uint_fast16_t)pRaw[0] << 8 | pRaw[1]);
+    pData->gainLeft = pRaw[2];
+    pData->gainRight = pRaw[3];
 }
 
 static bool limitDC(q5_11_t voltage, q8_t* pLeft, q8_t* pRight)
@@ -253,7 +283,7 @@ static bool limitDC(q5_11_t voltage, q8_t* pLeft, q8_t* pRight)
     bool limit = false;
 
     if (voltage > HELENABASE_VOLTAGE_MAX || voltage < HELENABASE_VOLTAGE_MIN)
-        max = HELENABASE_CURRENT_LIMIT;
+        max = 0;
     if (voltage < HELENABASE_VOLTAGE_LIMIT - ((HELENABASE_CURRENT_MAX - HELENABASE_CURRENT_LIMIT) << 4))
         max = HELENABASE_CURRENT_MAX;
     else
@@ -275,7 +305,7 @@ static bool limitDC(q5_11_t voltage, q8_t* pLeft, q8_t* pRight)
 }
 
 /* Public functions ----------------------------------------------------------*/
-hbd_retVal_t hbd_Init(hbd_init_t const* pInit, hbd_inst_t* pInst, uint8_t* pCnt)
+hbd_retVal_t hbd_Init(hbd_init_t const* pInit, hbd_inst_t* pInst, hbd_samplingData_t* pData, uint8_t* pCnt, bool reset)
 {
     VERIFY_NOT_NULL(pInit);
     VERIFY_NOT_NULL(pInst);
@@ -284,7 +314,7 @@ hbd_retVal_t hbd_Init(hbd_init_t const* pInit, hbd_inst_t* pInst, uint8_t* pCnt)
     read = pInit->i2cRead;
     write = pInit->i2cWrite;
 
-    return initialize(pInst, pCnt);
+    return initialize(pInst, pData, pCnt, reset);
 }
 
 hbd_retVal_t hbd_SetConfig(hbd_inst_t* pInst, hbd_config_t const* pConfig)
@@ -301,7 +331,7 @@ hbd_retVal_t hbd_SetConfig(hbd_inst_t* pInst, hbd_config_t const* pConfig)
         return HBD_SUCCESS;
 
     hbd_retVal_t retVal;
-    retVal = READ(pInst->address, HELENABASE_RA_CONFIG, &cfg, 1);
+    retVal = WRITE(pInst->address, HELENABASE_RA_CONFIG, &cfg, 1);
     RETVAL_CHECK(retVal);
 
     pInst->regMirror[HELENABASE_RA_CONFIG] = cfg;
@@ -362,11 +392,18 @@ hbd_retVal_t hbd_ReadSamplingData(hbd_inst_t* pInst, hbd_samplingData_t* pSampli
     VERIFY_NOT_NULL(pSamplingData);
     VERIFY_INST(pInst);
 
+#ifdef HDB_FULL_MIRROR
+    uint8_t* pData = &pInst->regMirror[HELENABASE_RA_STATUSSDL_H];
+#else
+    uint8_t buffer[6];
+    uint8_t* pData = buffer;
+#endif // HDB_FULL_MIRROR
+
     hbd_retVal_t retVal;
-    retVal = READ(pInst->address, HELENABASE_RA_STATUSSDL_H, &pInst->regMirror[HELENABASE_RA_STATUSSDL_H], 6);
+    retVal = READ(pInst->address, HELENABASE_RA_STATUSSDL_H, pData, 6);
     RETVAL_CHECK(retVal);
 
-    decodeSamplingData(pInst, &pInst->regMirror[HELENABASE_RA_STATUSSDL_H], pSamplingData);
+    decodeSamplingData(pInst->fwRev, pData, pSamplingData);
 
     return HBD_SUCCESS;
 }
@@ -392,12 +429,19 @@ hbd_retVal_t hbd_ReadDutyCycles(hbd_inst_t* pInst, q8_t* pLeft, q8_t* pRight)
     VERIFY_INST(pInst);
     VERIFY_REV11(pInst);
 
+#ifdef HDB_FULL_MIRROR
+    uint8_t* pData = &pInst->regMirror[HELENABASE_RA_DUTYCYCLELEFT];
+#else
+    uint8_t buffer[2];
+    uint8_t* pData = buffer;
+#endif // HDB_FULL_MIRROR
+
     hbd_retVal_t retVal;
-    retVal = READ(pInst->address, HELENABASE_RA_DUTYCYCLELEFT, &pInst->regMirror[HELENABASE_RA_DUTYCYCLELEFT], 2);
+    retVal = READ(pInst->address, HELENABASE_RA_DUTYCYCLELEFT, pData, 2);
     RETVAL_CHECK(retVal);
 
-    *pLeft = pInst->regMirror[HELENABASE_RA_DUTYCYCLELEFT];
-    *pRight = pInst->regMirror[HELENABASE_RA_DUTYCYCLERIGHT];
+    *pLeft = pData[0];
+    *pRight = pData[1];
 
     return HBD_SUCCESS;
 }
@@ -410,8 +454,18 @@ hbd_retVal_t hbd_GetCalibrationData(hbd_inst_t const* pInst, hbd_calibData_t* pC
     VERIFY_INST(pInst);
     VERIFY_REV12(pInst);
 
-    // static information, no need to read
-    decodeCalibrationData(pInst, pCalibData);
+#ifdef HDB_FULL_MIRROR
+    uint8_t const* pData = &pInst->regMirror[HELENABASE_RA_TEMPOFFSET_H];
+#else
+    uint8_t buffer[5];
+    uint8_t* pData = buffer;
+
+    hbd_retVal_t retVal;
+    retVal = READ(pInst->address, HELENABASE_RA_TEMPOFFSET_H, buffer, sizeof(buffer));
+    RETVAL_CHECK(retVal);
+#endif // HDB_FULL_MIRROR
+
+    decodeCalibrationData(pData, pCalibData);
 
     return HBD_SUCCESS;
 }
@@ -435,7 +489,9 @@ hbd_retVal_t hbd_SetCalibrationData(hbd_inst_t* pInst, hbd_calibData_t const* pC
     retVal = WRITE(pInst->address, HELENABASE_RA_TEMPOFFSET_H, buffer, sizeof(buffer));
     RETVAL_CHECK(retVal);
 
+#ifdef HDB_FULL_MIRROR
     memcpy(&pInst->regMirror[HELENABASE_RA_TEMPOFFSET_H], buffer, sizeof(buffer));
+#endif // HDB_FULL_MIRROR
 
     return HBD_SUCCESS;
 }

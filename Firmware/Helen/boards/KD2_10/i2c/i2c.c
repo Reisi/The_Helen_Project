@@ -71,7 +71,7 @@ int8_t i2c_Read(uint8_t devAddr, uint8_t regAddr, uint8_t *data, uint16_t len)
     return 0;
 }
 
-int8_t i2c_Write(uint8_t devAddr, uint8_t regAddr, uint8_t *data, uint16_t len)
+int8_t i2c_Write(uint8_t devAddr, uint8_t regAddr, uint8_t const *data, uint16_t len)
 {
     ret_code_t errCode;
     uint8_t buffer[len+1];

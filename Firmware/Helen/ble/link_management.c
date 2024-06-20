@@ -274,62 +274,6 @@ static uint8_t unconnectedDevices(uint8_t role)
     return cnt;
 }
 
-/**@brief Function for handling advertising events.
- *
- * @details This function will be called for advertising events which are passed to the application.
- *
- * @param[in] ble_adv_evt  Advertising event.
- */
-static void advEventHandler(ble_adv_evt_t advEvt)
-{
-    lm_advState_t newState;
-
-    switch (advEvt)
-    {
-        // the dedicated LM_ADV_OPEN mode is only used when advertising isn't open all the time
-        case BLE_ADV_EVT_FAST:
-            if (advState.advType == BTLE_ADV_TYPE_ALWAYS_OPEN || !advState.isOpenAdvertising)
-                newState = LM_ADV_FAST;
-            else
-                newState = LM_ADV_OPEN;
-            break;
-
-        case BLE_ADV_EVT_SLOW:
-            newState = LM_ADV_SLOW;
-            // open advertising has ended
-            if (advState.isOpenAdvertising && advState.advType != BTLE_ADV_TYPE_ALWAYS_OPEN)
-            {
-                // check if there are devices to advertise to, if not stop advertising
-                if (unconnectedDevices(BLE_GAP_ROLE_PERIPH) == 0)
-                {
-                    (void)sd_ble_gap_adv_stop(advInst.adv_handle);
-                    newState = LM_ADV_OFF;
-                }
-
-                advState.isOpenAdvertising = false;
-            }
-            break;
-
-        case BLE_ADV_EVT_IDLE:
-            newState = LM_ADV_OFF;
-            break;
-
-        default:
-            return;
-    }
-
-    if (newState != advState.actual)
-    {
-        sendAdvEvent(newState);
-        advState.actual = newState;
-    }
-}
-
-static void advErrorHandler(uint32_t errCode)
-{
-    NRF_LOG_ERROR("advertising error %d", errCode);
-}
-
 /** @brief function to set the desired advertising mode
  *
  * @note the actual used advertising mode is reported through the event handler
@@ -400,6 +344,67 @@ static ret_code_t setAdvMode(lm_advState_t mode)
     return errCode;
 }
 
+/**@brief Function for handling advertising events.
+ *
+ * @details This function will be called for advertising events which are passed to the application.
+ *
+ * @param[in] ble_adv_evt  Advertising event.
+ */
+static void advEventHandler(ble_adv_evt_t advEvt)
+{
+    lm_advState_t newState;
+
+    switch (advEvt)
+    {
+        // the dedicated LM_ADV_OPEN mode is only used when advertising isn't open all the time
+        case BLE_ADV_EVT_FAST:
+            if (advState.desired == LM_ADV_SLOW)
+            {
+                setAdvMode(LM_ADV_SLOW);
+                return; // we'll receive a new event with BLE_ADV_EVT_SLOW
+            }
+            if (advState.advType == BTLE_ADV_TYPE_ALWAYS_OPEN || !advState.isOpenAdvertising)
+                newState = LM_ADV_FAST;
+            else
+                newState = LM_ADV_OPEN;
+            break;
+
+        case BLE_ADV_EVT_SLOW:
+            newState = LM_ADV_SLOW;
+            // open advertising has ended
+            if (advState.isOpenAdvertising && advState.advType != BTLE_ADV_TYPE_ALWAYS_OPEN)
+            {
+                // check if there are devices to advertise to, if not stop advertising
+                if (unconnectedDevices(BLE_GAP_ROLE_PERIPH) == 0)
+                {
+                    (void)sd_ble_gap_adv_stop(advInst.adv_handle);
+                    newState = LM_ADV_OFF;
+                }
+
+                advState.isOpenAdvertising = false;
+            }
+            break;
+
+        case BLE_ADV_EVT_IDLE:
+            newState = LM_ADV_OFF;
+            break;
+
+        default:
+            return;
+    }
+
+    if (newState != advState.actual)
+    {
+        sendAdvEvent(newState);
+        advState.actual = newState;
+    }
+}
+
+static void advErrorHandler(uint32_t errCode)
+{
+    NRF_LOG_ERROR("advertising error %d", errCode);
+}
+
 /** @brief sets the white list
  *  @note  whitelist is only used for scanning, so only devices with central role are added
  *
@@ -418,7 +423,7 @@ static bool setWhitelist()
         (void)pm_conn_handle_get(id, &connHandle);
         if (ble_conn_state_status(connHandle) != BLE_CONN_STATUS_CONNECTED) // add only unconnected devices
             peers[cnt++] = id;
-        id = pm_next_peer_id_get(id);
+        id = nextPeerIdGet(id, BLE_GAP_ROLE_CENTRAL);
     }
 
     if (cnt == 0)
@@ -1093,6 +1098,22 @@ ret_code_t lm_SetExposureMode(lm_exposureMode_t mode)
     ret_code_t errCode = NRF_SUCCESS;
     lm_scanState_t scanModeReq = (lm_scanState_t)mode;
     lm_advState_t advModeReq = (lm_advState_t)mode;
+
+    // update connection params if necessary
+    if ((advModeReq <= LM_ADV_SLOW) != (advState.desired <= LM_ADV_SLOW))
+    {
+        ble_gap_conn_params_t const* pNewParams = &connParamsPeriph[advModeReq <= LM_ADV_SLOW ? CONN_LOW_POWER : CONN_LOW_LATENCY];
+        ble_conn_state_conn_handle_list_t connHandles = ble_conn_state_periph_handles();
+        for (uint32_t i = 0; i < connHandles.len; i++)
+        {
+            if (ble_conn_state_status(connHandles.conn_handles[i]) != BLE_CONN_STATUS_CONNECTED)
+                continue;
+
+            errCode = ble_conn_params_change_conn_params(connHandles.conn_handles[i], (ble_gap_conn_params_t*)pNewParams);
+            if (errCode != NRF_SUCCESS && errCode != BLE_ERROR_INVALID_CONN_HANDLE) // ignore error if not connected
+                NRF_LOG_ERROR("conn params change error %d", errCode);
+        }
+    }
 
     // there is no search mode for advertising (but advertising is restarted
     // without whitelist in scanning timeout handler), so use previous mode

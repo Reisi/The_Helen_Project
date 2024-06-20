@@ -111,7 +111,7 @@ static ret_code_t initSensor(uint8_t addr)
 {
     int8_t retVal;
 
-    bmi160dev.write    = i2c_Write;
+    bmi160dev.write    = (bmi160_write_fptr_t)i2c_Write;
     bmi160dev.read     = i2c_Read;
     bmi160dev.delay_ms = nrf_delay_ms;
     bmi160dev.id       = addr;

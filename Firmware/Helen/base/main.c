@@ -794,6 +794,9 @@ int main(void)
     errCode = dbg_Init();
     APP_ERROR_CHECK(errCode);
 
+    errCode = mainInit();
+    APP_ERROR_CHECK(errCode);
+
     // First of all initialize the mode management, so that the modes are
     // already for the board initialization
     errCode = mm_Init(modeChanged, &initMode);
@@ -803,9 +806,6 @@ int main(void)
     LOG_ERROR_CHECK("board init error %d", errCode);
     if (criticalError == NRF_SUCCESS)
         criticalError = errCode;
-
-    errCode = mainInit();
-    APP_ERROR_CHECK(errCode);
 
     hmi_init_t hmiInit = {.eventHandler = hmiEventHandler};
     errCode = hmi_Init(&hmiInit);

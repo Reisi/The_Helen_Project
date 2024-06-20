@@ -42,15 +42,17 @@ typedef enum
 
 typedef enum
 {
-    BLE_KD2_CP_OP_REQ_CHN_CONFIG     = 1, /**< Operator to request a channel configuration */
-    BLE_KD2_CP_OP_SET_CHN_CONFIG     = 2, /**< Operator to set a channel configuration */
-    BLE_KD2_CP_OP_REQ_COM_PIN_CONFIG = 3, /**< Operator to request the com pin configuration */
-    BLE_KD2_CP_OP_SET_COM_PIN_CONFIG = 4, /**< Operator to set the com pin configuration */
-    BLE_KD2_CP_OP_REQ_INT_COMP       = 5, /**< Operator to request the internal compensation */
-    BLE_KD2_CP_OP_SET_INT_COMP       = 6, /**< Operator to set the internal compensation */
-    BLE_KD2_CP_OP_REQ_EXT_COMP       = 7, /**< Operator to request the external comepnsation */
-    BLE_KD2_CP_OP_SET_EXT_COMP       = 8, /**< Operator to set the external compensation */
-    BLE_KD2_CP_OP_RSP_CODE           = 32,/**< Response Code */
+    BLE_KD2_CP_OP_REQ_CHN_CONFIG      = 1, /**< Operator to request a channel configuration */
+    BLE_KD2_CP_OP_SET_CHN_CONFIG      = 2, /**< Operator to set a channel configuration */
+    BLE_KD2_CP_OP_REQ_COM_PIN_CONFIG  = 3, /**< Operator to request the com pin configuration */
+    BLE_KD2_CP_OP_SET_COM_PIN_CONFIG  = 4, /**< Operator to set the com pin configuration */
+    BLE_KD2_CP_OP_REQ_INT_COMP        = 5, /**< Operator to request the internal compensation */
+    BLE_KD2_CP_OP_SET_INT_COMP        = 6, /**< Operator to set the internal compensation */
+    BLE_KD2_CP_OP_REQ_EXT_COMP        = 7, /**< Operator to request the external comepnsation */
+    BLE_KD2_CP_OP_SET_EXT_COMP        = 8, /**< Operator to set the external compensation */
+    BLE_KD2_CP_OP_REQ_IMU_CALIB_STATE = 9, /**< Operator to request the imu compensation state */
+    BLE_KD2_CP_OP_START_IMU_CALIB     = 10, /**< Operator to set the external compensation */
+    BLE_KD2_CP_OP_RSP_CODE            = 32,/**< Response Code */
 } ble_KD2_cp_op_code_t;
 
 /**@brief KD2 Control Control Point response parameter */
@@ -134,6 +136,7 @@ typedef union
     ble_KD2_com_pin_t            com_pin;
     ble_KD2_int_comp_t           int_comp;
     ble_KD2_ext_comp_t           ext_comp;
+    bool                         imu_calib_state;
 } ble_KD2_cp_params_t;
 
 /**@brief client specific data */
@@ -168,6 +171,7 @@ typedef struct
     uint8_t com_pin_mode_supported   : 1;
     uint8_t internal_comp_supported  : 1;
     uint8_t external_comp_supported  : 1;
+    uint8_t imu_calib_supported      : 1;
 } ble_KD2_config_f_t;
 
 /**@brief KD2 channel feature structure. This contains the supported channel features */

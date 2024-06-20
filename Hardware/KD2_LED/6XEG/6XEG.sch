@@ -1,0 +1,323 @@
+EESchema Schematic File Version 4
+EELAYER 30 0
+EELAYER END
+$Descr User 8268 5827
+encoding utf-8
+Sheet 1 1
+Title "50W 6x XE-G LED Board"
+Date "2022-11-27"
+Rev "1.0"
+Comp ""
+Comment1 ""
+Comment2 ""
+Comment3 ""
+Comment4 ""
+$EndDescr
+$Comp
+L Connector_Generic:Conn_02x02_Odd_Even J1
+U 1 1 6380D623
+P 2350 2300
+F 0 "J1" H 2400 2517 50  0000 C CNN
+F 1 "Conn_02x02_Odd_Even" H 2400 2426 50  0000 C CNN
+F 2 "Connector_PinHeader_2.00mm:PinHeader_2x02_P2.00mm_Vertical_SMD" H 2350 2300 50  0001 C CNN
+F 3 "~" H 2350 2300 50  0001 C CNN
+	1    2350 2300
+	1    0    0    -1  
+$EndComp
+$Comp
+L Device:LED_PAD D2
+U 1 1 6380E3D0
+P 1550 2550
+F 0 "D2" V 1596 2693 50  0000 L CNN
+F 1 "XE-G" V 1505 2693 50  0000 L CNN
+F 2 "rt_leds:LED_Cree-XE-G" H 1550 2550 50  0001 C CNN
+F 3 "~" H 1550 2550 50  0001 C CNN
+	1    1550 2550
+	0    1    -1   0   
+$EndComp
+$Comp
+L Device:LED_PAD D5
+U 1 1 6380FEE2
+P 3250 2150
+F 0 "D5" V 3296 2293 50  0000 L CNN
+F 1 "XE-G" V 3205 2293 50  0000 L CNN
+F 2 "rt_leds:LED_Cree-XE-G" H 3250 2150 50  0001 C CNN
+F 3 "~" H 3250 2150 50  0001 C CNN
+	1    3250 2150
+	0    -1   -1   0   
+$EndComp
+Wire Wire Line
+	4050 2000 4050 1900
+Wire Wire Line
+	4050 1900 4550 1900
+Wire Wire Line
+	4550 1900 4550 2300
+Wire Wire Line
+	4050 2300 4050 2400
+Wire Wire Line
+	4050 2700 4050 2800
+Wire Wire Line
+	4050 2800 4550 2800
+Wire Wire Line
+	4550 2800 4550 2400
+Wire Wire Line
+	4550 2300 4650 2300
+Wire Wire Line
+	4650 2400 4550 2400
+$Comp
+L Device:LED_PAD D1
+U 1 1 63812B8B
+P 1550 2150
+F 0 "D1" V 1596 2293 50  0000 L CNN
+F 1 "XE-G" V 1505 2293 50  0000 L CNN
+F 2 "rt_leds:LED_Cree-XE-G" H 1550 2150 50  0001 C CNN
+F 3 "~" H 1550 2150 50  0001 C CNN
+	1    1550 2150
+	0    1    -1   0   
+$EndComp
+$Comp
+L Device:LED_PAD D4
+U 1 1 63812C07
+P 4050 2550
+F 0 "D4" V 4096 2693 50  0000 L CNN
+F 1 "XE-G" V 4005 2693 50  0000 L CNN
+F 2 "rt_leds:LED_Cree-XE-G" H 4050 2550 50  0001 C CNN
+F 3 "~" H 4050 2550 50  0001 C CNN
+	1    4050 2550
+	0    1    -1   0   
+$EndComp
+Wire Wire Line
+	1550 2000 1550 1900
+Wire Wire Line
+	1550 1900 2050 1900
+Wire Wire Line
+	2050 1900 2050 2300
+Wire Wire Line
+	1550 2300 1550 2400
+Wire Wire Line
+	1550 2700 1550 2800
+Wire Wire Line
+	1550 2800 2050 2800
+Wire Wire Line
+	2050 2800 2050 2400
+Wire Wire Line
+	2050 2300 2150 2300
+Wire Wire Line
+	2150 2400 2050 2400
+$Comp
+L Device:LED_PAD D3
+U 1 1 638157C1
+P 4050 2150
+F 0 "D3" V 4096 2293 50  0000 L CNN
+F 1 "XE-G" V 4005 2293 50  0000 L CNN
+F 2 "rt_leds:LED_Cree-XE-G" H 4050 2150 50  0001 C CNN
+F 3 "~" H 4050 2150 50  0001 C CNN
+	1    4050 2150
+	0    1    -1   0   
+$EndComp
+$Comp
+L Device:LED_PAD D6
+U 1 1 63815879
+P 3250 2550
+F 0 "D6" V 3296 2693 50  0000 L CNN
+F 1 "XE-G" V 3205 2693 50  0000 L CNN
+F 2 "rt_leds:LED_Cree-XE-G" H 3250 2550 50  0001 C CNN
+F 3 "~" H 3250 2550 50  0001 C CNN
+	1    3250 2550
+	0    -1   -1   0   
+$EndComp
+Wire Wire Line
+	3250 2000 3250 1900
+Wire Wire Line
+	3250 1900 2750 1900
+Wire Wire Line
+	2750 1900 2750 2300
+Wire Wire Line
+	3250 2300 3250 2400
+Wire Wire Line
+	3250 2700 3250 2800
+Wire Wire Line
+	3250 2800 2750 2800
+Wire Wire Line
+	2750 2800 2750 2400
+Wire Wire Line
+	2750 2300 2650 2300
+Wire Wire Line
+	2650 2400 2750 2400
+Wire Wire Line
+	1350 2150 1250 2150
+Wire Wire Line
+	1250 2150 1250 2550
+Wire Wire Line
+	1350 2550 1250 2550
+$Comp
+L Connector_Generic:Conn_01x01 J2
+U 1 1 6382C2CC
+P 4850 2300
+F 0 "J2" H 4768 2075 50  0000 C CNN
+F 1 "Conn_01x01" H 4768 2166 50  0000 C CNN
+F 2 "rt_pins:1,5x3mm_SMD" H 4850 2300 50  0001 C CNN
+F 3 "~" H 4850 2300 50  0001 C CNN
+	1    4850 2300
+	1    0    0    1   
+$EndComp
+$Comp
+L Connector_Generic:Conn_01x01 J3
+U 1 1 6382C886
+P 4850 2400
+F 0 "J3" H 4768 2175 50  0000 C CNN
+F 1 "Conn_01x01" H 4768 2266 50  0000 C CNN
+F 2 "rt_pins:1,5x3mm_SMD" H 4850 2400 50  0001 C CNN
+F 3 "~" H 4850 2400 50  0001 C CNN
+	1    4850 2400
+	1    0    0    1   
+$EndComp
+$Comp
+L Connector_Generic:Conn_01x01 J4
+U 1 1 63837CA1
+P 5550 2300
+F 0 "J4" H 5468 2075 50  0000 C CNN
+F 1 "Conn_01x01" H 5468 2166 50  0000 C CNN
+F 2 "rt_pins:1,5x3mm_SMD" H 5550 2300 50  0001 C CNN
+F 3 "~" H 5550 2300 50  0001 C CNN
+	1    5550 2300
+	-1   0    0    1   
+$EndComp
+$Comp
+L Connector_Generic:Conn_01x01 J5
+U 1 1 63837DDD
+P 5550 2400
+F 0 "J5" H 5468 2175 50  0000 C CNN
+F 1 "Conn_01x01" H 5468 2266 50  0000 C CNN
+F 2 "rt_pins:1,5x3mm_SMD" H 5550 2400 50  0001 C CNN
+F 3 "~" H 5550 2400 50  0001 C CNN
+	1    5550 2400
+	-1   0    0    1   
+$EndComp
+$Comp
+L Device:R R1
+U 1 1 63839CEA
+P 6150 2350
+F 0 "R1" H 6220 2396 50  0000 L CNN
+F 1 "tbd." H 6220 2305 50  0000 L CNN
+F 2 "Resistor_SMD:R_1206_3216Metric" V 6080 2350 50  0001 C CNN
+F 3 "~" H 6150 2350 50  0001 C CNN
+	1    6150 2350
+	1    0    0    -1  
+$EndComp
+$Comp
+L Device:LED D7
+U 1 1 6383A63B
+P 6150 1950
+F 0 "D7" V 6189 1832 50  0000 R CNN
+F 1 "tbd." V 6098 1832 50  0000 R CNN
+F 2 "LED_SMD:LED_PLCC-2" H 6150 1950 50  0001 C CNN
+F 3 "~" H 6150 1950 50  0001 C CNN
+	1    6150 1950
+	0    -1   -1   0   
+$EndComp
+$Comp
+L Device:LED D9
+U 1 1 6383B114
+P 6150 2750
+F 0 "D9" V 6189 2632 50  0000 R CNN
+F 1 "tbd." V 6098 2632 50  0000 R CNN
+F 2 "LED_SMD:LED_PLCC-2" H 6150 2750 50  0001 C CNN
+F 3 "~" H 6150 2750 50  0001 C CNN
+	1    6150 2750
+	0    -1   -1   0   
+$EndComp
+$Comp
+L Device:R R2
+U 1 1 6383BDFF
+P 6550 2350
+F 0 "R2" H 6620 2396 50  0000 L CNN
+F 1 "tbd." H 6620 2305 50  0000 L CNN
+F 2 "Resistor_SMD:R_1206_3216Metric" V 6480 2350 50  0001 C CNN
+F 3 "~" H 6550 2350 50  0001 C CNN
+	1    6550 2350
+	1    0    0    -1  
+$EndComp
+$Comp
+L Device:LED D8
+U 1 1 6383BF9B
+P 6550 1950
+F 0 "D8" V 6589 1832 50  0000 R CNN
+F 1 "tbd." V 6498 1832 50  0000 R CNN
+F 2 "LED_SMD:LED_PLCC-2" H 6550 1950 50  0001 C CNN
+F 3 "~" H 6550 1950 50  0001 C CNN
+	1    6550 1950
+	0    -1   -1   0   
+$EndComp
+$Comp
+L Device:LED D10
+U 1 1 6383BFA5
+P 6550 2750
+F 0 "D10" V 6589 2632 50  0000 R CNN
+F 1 "tbd." V 6498 2632 50  0000 R CNN
+F 2 "LED_SMD:LED_PLCC-2" H 6550 2750 50  0001 C CNN
+F 3 "~" H 6550 2750 50  0001 C CNN
+	1    6550 2750
+	0    -1   -1   0   
+$EndComp
+Wire Wire Line
+	5750 2300 5950 2300
+Wire Wire Line
+	5950 2300 5950 1700
+Wire Wire Line
+	5950 1700 6150 1700
+Wire Wire Line
+	6550 1700 6550 1800
+Wire Wire Line
+	6550 3000 6150 3000
+Wire Wire Line
+	5950 3000 5950 2400
+Wire Wire Line
+	5950 2400 5750 2400
+Wire Wire Line
+	6550 2100 6550 2200
+Wire Wire Line
+	6550 2500 6550 2600
+Wire Wire Line
+	6550 2900 6550 3000
+Wire Wire Line
+	6150 1700 6150 1800
+Wire Wire Line
+	6150 2100 6150 2200
+Wire Wire Line
+	6150 2500 6150 2600
+Wire Wire Line
+	6150 2900 6150 3000
+Connection ~ 6150 1700
+Wire Wire Line
+	6150 1700 6550 1700
+Connection ~ 6150 3000
+Wire Wire Line
+	6150 3000 5950 3000
+Wire Wire Line
+	3450 2150 3550 2150
+Wire Wire Line
+	3550 2150 3550 2350
+Wire Wire Line
+	3850 2150 3750 2150
+Wire Wire Line
+	3750 2550 3850 2550
+Wire Wire Line
+	3750 2150 3750 2350
+Connection ~ 3750 2350
+Wire Wire Line
+	3750 2350 3750 2550
+Wire Wire Line
+	3450 2550 3550 2550
+Wire Wire Line
+	3550 2550 3550 2350
+Connection ~ 3550 2350
+Wire Wire Line
+	3550 2350 3750 2350
+Text Notes 1400 3150 0    50   ~ 0
+flood leds
+Text Notes 3500 3150 0    50   ~ 0
+spot leds
+Text Notes 6050 3150 0    50   ~ 0
+auxiliary leds
+$EndSCHEMATC

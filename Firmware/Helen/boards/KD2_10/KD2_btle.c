@@ -300,6 +300,30 @@ static void onExtCompSet(uint16_t connHandle, ble_KD2_ext_comp_t const *pComp)
     LOG_ERROR_CHECK("error %d sending external compensation response", errCode);
 }
 
+static void onImuStateRequest(uint16_t connHandle)
+{
+    ret_code_t errCode;
+    ble_KD2_cp_rsp_t rsp;
+
+    rsp.opcode = BLE_KD2_CP_OP_REQ_IMU_CALIB_STATE;
+    rsp.status = BLE_KD2_CP_RSP_VAL_NOT_SUPPORTED;
+
+    errCode = ble_KD2_cp_response(&KD2Gatts, connHandle, &rsp);
+    LOG_ERROR_CHECK("error %d sending com pin response", errCode);
+}
+
+static void onImuCalibStart(uint16_t connHandle)
+{
+    ret_code_t errCode;
+    ble_KD2_cp_rsp_t rsp;
+
+    rsp.opcode = BLE_KD2_CP_OP_START_IMU_CALIB;
+    rsp.status = BLE_KD2_CP_RSP_VAL_NOT_SUPPORTED;
+
+    errCode = ble_KD2_cp_response(&KD2Gatts, connHandle, &rsp);
+    LOG_ERROR_CHECK("error %d sending imu calib start response", errCode);
+}
+
 static void eventHandler(ble_KD2_evt_t const *pEvt)
 {
     if (pEvt->evt_type != BLE_KD2_EVT_CP_EVT)
@@ -337,6 +361,14 @@ static void eventHandler(ble_KD2_evt_t const *pEvt)
 
     case BLE_KD2_CP_OP_SET_EXT_COMP:
         onExtCompSet(pEvt->p_client->conn_handle, &pEvt->p_params->ext_comp);
+        break;
+
+    case BLE_KD2_CP_OP_REQ_IMU_CALIB_STATE:
+        onImuStateRequest(pEvt->p_client->conn_handle);
+        break;
+
+    case BLE_KD2_CP_OP_START_IMU_CALIB:
+        onImuCalibStart(pEvt->p_client->conn_handle);
         break;
 
     default:

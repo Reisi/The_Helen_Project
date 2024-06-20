@@ -1266,7 +1266,7 @@ static ret_code_t initHelenaDriver(uint8_t* pAddrs)
     init.i2cRead = i2c_Read;
     init.i2cWrite = i2c_Write;
 
-    errCode = hbd_Init(&init, &helenaInst, &cnt);
+    errCode = hbd_Init(&init, &helenaInst, NULL, &cnt, false);
     if (errCode == HBD_SUCCESS)
     {
         *pAddrs = helenaInst.address;

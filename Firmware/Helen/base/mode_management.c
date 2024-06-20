@@ -206,7 +206,12 @@ static uint8_t getNextGroup(uint8_t currentMode)
     // in off mode start with the first available mode
     if (currentMode == MM_MODE_OFF)  /// TODO: SOS
     {
-        while (modes[currentMode].ignore) {currentMode++;}
+        currentMode = 0;
+        while (modes[currentMode].ignore)
+        {
+            currentMode++;
+            posInGroup++;
+        }
     }
     // if not off, determine the position of the current mode in its group
     else

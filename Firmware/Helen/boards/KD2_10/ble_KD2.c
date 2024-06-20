@@ -20,6 +20,7 @@
 #define KD2_CFG_F_COM_PIN_MASK          (1 << 1)
 #define KD2_CFG_F_INT_COMP_MASK         (1 << 2)
 #define KD2_CFG_F_EXT_COMP_MASK         (1 << 3)
+#define KD2_CFG_F_IMU_CALIB_MASK        (1 << 4)
 
 #define KD2_CHN_F_ADAPTIVE_MASK         (1 << 0)
 
@@ -72,6 +73,10 @@ static uint32_t feature_char_add(ble_KD2_t * p_KD2, security_req_t rd_sec)
     if (p_KD2->feature.config.external_comp_supported)
     {
         config_flags |= KD2_CFG_F_EXT_COMP_MASK;
+    }
+    if (p_KD2->feature.config.imu_calib_supported)
+    {
+        config_flags |= KD2_CFG_F_IMU_CALIB_MASK;
     }
     init_value_encoded[0] = config_flags;
 
@@ -291,6 +296,8 @@ uint32_t cp_decode(uint8_t const   * p_rcvd_val,
     case BLE_KD2_CP_OP_REQ_COM_PIN_CONFIG:
     case BLE_KD2_CP_OP_REQ_INT_COMP:
     case BLE_KD2_CP_OP_REQ_EXT_COMP:
+    case BLE_KD2_CP_OP_REQ_IMU_CALIB_STATE:
+    case BLE_KD2_CP_OP_START_IMU_CALIB:
         VERIFY_LEN(len, 1);
         return NRF_SUCCESS;
 
@@ -356,6 +363,10 @@ static bool is_feature_supported(ble_KD2_f_t const * p_feature, ble_KD2_cp_op_co
     case BLE_KD2_CP_OP_REQ_EXT_COMP:
     case BLE_KD2_CP_OP_SET_EXT_COMP:
         return p_feature->config.external_comp_supported;
+
+    case BLE_KD2_CP_OP_REQ_IMU_CALIB_STATE:
+    case BLE_KD2_CP_OP_START_IMU_CALIB:
+        return p_feature->config.imu_calib_supported;
 
     default:
         return false;
@@ -522,6 +533,10 @@ static uint8_t cp_encode(ble_KD2_cp_rsp_t const* p_rsp, ble_KD2_t const * p_KD2,
                 len += 2;
                 p_data[len++] = p_rsp->params.ext_comp.left_current_gain;
                 p_data[len++] = p_rsp->params.ext_comp.right_current_gain;
+                break;
+
+            case BLE_KD2_CP_OP_REQ_IMU_CALIB_STATE:
+                p_data[len++] = p_rsp->params.imu_calib_state ? 1 : 0;
                 break;
 
             default:

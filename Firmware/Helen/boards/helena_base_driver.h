@@ -22,11 +22,16 @@
 
 #include "sdk_errors.h"
 
+/* Configuration -------------------------------------------------------------*/
+#define HDB_FULL_MIRROR // if defined all register are are kept in ram, if not just config and target values
+
 /* Exported defines ----------------------------------------------------------*/
 #define HBD_DC_MAX      254
-#define HBD_REGISTERCNT 16
-
-/* Exported macros -----------------------------------------------------------*/
+#ifdef HDB_FULL_MIRROR
+#define HBD_MIRRORCNT 16
+#else
+#define HBD_MIRRORCNT 3
+#endif // HDB_FULL_MIRROR
 
 /* Exported types ------------------------------------------------------------*/
 typedef enum
@@ -50,7 +55,7 @@ typedef uint16_t q12_4_t;
 
 typedef int8_t (*hbd_read_t)(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data, uint16_t len);
 
-typedef int8_t (*hbd_write_t)(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data, uint16_t len);
+typedef int8_t (*hbd_write_t)(uint8_t dev_addr, uint8_t reg_addr, uint8_t const *data, uint16_t len);
 
 /** @brief helena base sleep mode settings
  */
@@ -128,7 +133,7 @@ typedef struct
 {
     uint8_t address;
     hbd_firmwareRev_t fwRev;
-    uint8_t regMirror[HBD_REGISTERCNT];
+    uint8_t regMirror[HBD_MIRRORCNT];
 } hbd_inst_t;
 
 /* Exported functions ------------------------------------------------------- */
@@ -136,11 +141,13 @@ typedef struct
  *
  * @param[in]     pInit  the read and write functions
  * @param[out]    pInst  array of available driver instances
+ * @param[out]    pInst  array of sampling data for initial values, NULL if not needed
  * @param[in/out] pCnt   in: available instance structures, out: the number of
  *                       found drivers
+ * @param[in]     reset  true if driver should be reset to default setup, false if not
  * @return        HBD_SUCCESS, HBD_ERROR_NULL or HBD_ERROR_NOT_FOUND
  */
-hbd_retVal_t hbd_Init(hbd_init_t const* pInit, hbd_inst_t* pInst, uint8_t* pCnt);
+hbd_retVal_t hbd_Init(hbd_init_t const* pInit, hbd_inst_t* pInst, hbd_samplingData_t* pData, uint8_t* pCnt, bool reset);
 
 
 /** @brief function to configure the sleep mode and the sample rate
