@@ -15,10 +15,12 @@ SRC_FILES += \
   boards/KD2_10/ble_KD2.c \
   boards/KD2_10/KD2_btle.c \
   boards/helena_base_driver.c \
+  $(wildcard *.c remotes/*.c) \
   util/regulator.c \
   util/filter.c \
   util/limiter.c \
   util/pitch_reg.c \
+  $(SDK_ROOT)/components/ble/ble_services/ble_bas/ble_bas.c \
   $(SDK_ROOT)/modules/nrfx/mdk/system_nrf52.c \
   $(SDK_ROOT)/modules/nrfx/mdk/gcc_startup_nrf52.S \
   $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_ppi.c \
@@ -27,7 +29,6 @@ SRC_FILES += \
   $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_pwm.c \
   $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_saadc.c \
   $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_twim.c \
-  $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_spim.c \
   $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_nvmc.c \
 
 ifeq ($(TYPE),DEBUG)
@@ -42,6 +43,7 @@ INC_FOLDERS += \
   boards/KD2_10/ext/bosch/BMI160_driver \
   boards/KD2_10/ext/bosch/BSXlite_v1.0.2 \
   util \
+  $(SDK_ROOT)/components/ble/ble_services/ble_bas \
   $(SDK_ROOT)/components/softdevice/s132/headers/nrf52 \
   $(SDK_ROOT)/components/libraries/delay \
 

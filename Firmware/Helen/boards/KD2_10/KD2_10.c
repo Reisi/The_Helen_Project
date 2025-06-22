@@ -137,13 +137,13 @@ NRF_LOG_MODULE_REGISTER();
 
 #define STATE_DEFAULTS              \
 {                                   \
-    .powerMode = BRD_PM_STANDBY,    \
+    .powerMode = BRD_PM_OFF,    \
     .lightMode = MM_MODE_OFF        \
 }
 
 #define PENDING_STATE_DEFAULTS      \
 {                                   \
-    .powerMode = BRD_PM_STANDBY,    \
+    .powerMode = BRD_PM_OFF,    \
     .lightMode = MM_MODE_OFF        \
 }
 
@@ -240,13 +240,22 @@ static void reorientModule(int16_t* pAccel, int16_t* pGyro);
 static bool isCurrentModeUsed(cht_5int3mode_t const* pChannels);
 
 /* Private read only variables -----------------------------------------------*/
-static const cht_types_t channelTypes[] =
+/*static const cht_types_t channelTypes[] =
 {
     CHT_TYPE_CURRENT,   // left(flood) current regulator on helena base driver
     CHT_TYPE_CURRENT,   // right(spot) current regulator on helena base driver
     CHT_TYPE_CURRENT,   // onboard current regulator
     CHT_TYPE_PWM,       // onboard PWM output
     CHT_TYPE_PWM,       // PWM signal on com pin
+};*/
+
+static const ble_hps_f_ch_size_t channelSizes[] =
+{
+    { 8, 3, BLE_HPS_CH_DESC_CURRENT },  // left(flood) current regulator on helena base driver
+    { 8, 3, BLE_HPS_CH_DESC_CURRENT },  // right(spot) current regulator on helena base driver
+    { 8, 3, BLE_HPS_CH_DESC_CURRENT },  // onboard current regulator
+    { 8, 3, BLE_HPS_CH_DESC_PWM },      // onboard PWM output
+    { 8, 3, BLE_HPS_CH_DESC_PWM },      // PWM signal on com pin
 };
 
 static const bmi160drv_init_t bmiInit[] =
@@ -834,7 +843,7 @@ static void setState(brd_powerMode_t powerMode, uint8_t lightMode, cht_5int3mode
  *
  * @param[out] pLcsMode
  */
-static void getLcsMode(ble_lcs_hlmt_mode_t* pLcsMode)
+/*static void getLcsMode(ble_lcs_hlmt_mode_t* pLcsMode)
 {
     if (pLcsMode == NULL)
         return;
@@ -852,14 +861,14 @@ static void getLcsMode(ble_lcs_hlmt_mode_t* pLcsMode)
     pLcsMode->intensity = CHT_53_TO_PERCENT(pChannel->intensity);
     pLcsMode->setup.spot = pChannel->intensity ? 1 : 0;
     pLcsMode->setup.pitchCompensation = pChannel->mode == CHMODE_PITCH ? 1 : 0;
-}
+}*/
 
 /** @brief temporary function to generate the LCS status flags
  *
  * @param[out] pLcsStatus
  * @return void
  */
-static void getLcsStatus(ble_lcs_lm_status_flags_t* pLcsStatus)
+/*static void getLcsStatus(ble_lcs_lm_status_flags_t* pLcsStatus)
 {
     if (pLcsStatus == NULL)
         return;
@@ -868,7 +877,7 @@ static void getLcsStatus(ble_lcs_lm_status_flags_t* pLcsStatus)
 
     pLcsStatus->temperature = limActive[CHANNEL_CURRENT].temperature ? 1 : 0;
     pLcsStatus->voltage = limActive[CHANNEL_CURRENT].voltage ? 1 : 0;
-}
+}*/
 
 /** @brief function to prepare and send a helen project measurement notification
  */
@@ -908,9 +917,29 @@ static void sendHpsMessage()
     }
 }
 
+static void updateBatteryLevel()
+{
+    // if com is enabled, battery state of charge might be available and can be relayed to battery service
+
+    if (state.powerMode != BRD_PM_IDLE || features.comSupported.rx == COM_PIN_NOT_USED)
+        return;
+
+    ret_code_t errCode;
+    q8_t soc;
+
+    errCode = cmh_GetBatterySOC(&soc);
+    if (errCode == NRF_SUCCESS)
+    {
+        errCode = KD2_btle_BatteryLevelUpdate(soc);
+        LOG_ERROR_CHECK("battery level update error %d", errCode);
+    }
+    else if (errCode != NRF_ERROR_NOT_FOUND && errCode != NRF_ERROR_TIMEOUT)
+        NRF_LOG_ERROR("unexpected error %d getting battery level", errCode);
+}
+
 /** @brief function to send a light control service notification with the current data
  */
-static void sendLcsMessage()
+/*static void sendLcsMessage()
 {
     /// TODO: include PWM channels and helena driver
 
@@ -964,7 +993,7 @@ static void sendLcsMessage()
     {
         NRF_LOG_ERROR("[BRD]: error %d sending message", errCode);
     }
-}
+}*/
 
 /** @brief function to set the emergency current limit
  */
@@ -1301,8 +1330,10 @@ static void setFeatures(brd_features_t* pFtr, bool isAssembled, uint8_t bmiAddr,
 {
     // minimal setup
     pFtr->maxNameLenght      = DEVICENAME_LENGHT;
+    pFtr->advType            = BTLE_ADV_TYPE_AFTER_SEARCH,
     pFtr->channelCount       = 1;
-    pFtr->pChannelTypes      = &channelTypes[CHANNEL_CURRENT];
+    //pFtr->pChannelTypes      = &channelTypes[CHANNEL_CURRENT];
+    pFtr->pChannelSize       = &channelSizes[CHANNEL_CURRENT];
     pFtr->comSupported.rx    = COM_PIN_NOT_USED;
     pFtr->comSupported.tx    = COM_PIN_NOT_USED;
     pFtr->comSupported.dummy = COM_PIN_NOT_USED;
@@ -1312,7 +1343,8 @@ static void setFeatures(brd_features_t* pFtr, bool isAssembled, uint8_t bmiAddr,
     if (helenaAddr)
     {
         pFtr->channelCount += 2;
-        pFtr->pChannelTypes = &channelTypes[CHANNEL_HELENAFLOOD];;
+        //pFtr->pChannelTypes = &channelTypes[CHANNEL_HELENAFLOOD];
+        pFtr->pChannelSize  = &channelSizes[CHANNEL_HELENAFLOOD];
     }
 
     // if assembled, PWM channel is available
@@ -1543,9 +1575,11 @@ bool brd_Execute(void)
 
     if (messagePrescale == 0)
     {
-        sendLcsMessage();
+        //sendLcsMessage();
         sendHpsMessage();
         messagePrescale = isModeUsed(state.channelConfig) ? MSG_PRESCALE_ON : MSG_PRESCALE_IDLE;
+
+        updateBatteryLevel();
 
         // without acceleration sensor idle timer is reset when light is used (and not in an active OFF mode)
         if (mm_GetCurrentMode() != MM_MODE_OFF && isModeUsed(state.channelConfig))
@@ -1642,6 +1676,8 @@ ret_code_t brd_SetDeviceName(char const* pNewName, ds_reportHandler_t resultHand
 
     memcpy(&newSetup.setup, &setup, sizeof(setup));
 
+    /// TODO: is advertising name updated?
+
     return storeSetup(resultHandler);
 }
 
@@ -1649,6 +1685,15 @@ ret_code_t brd_FactoryReset(ds_reportHandler_t resultHandler)
 {
     if (resultHandler == NULL)
         return NRF_ERROR_NULL;
+
+    if (setup.comPinMode == KD2_COMPIN_COM)
+    {
+        /// TODO: a reset and gatt table changed indication are necessary
+    }
+    else if (setup.comPinMode != KD2_COMPIN_NOTUSED)
+    {
+        /// TODO: a reset is necessary
+    }
 
     // set defaults setting
     cht_5int3mode_t chDefaults[CHANNEL_CNT][MM_NUM_OF_MODES] = CHANNEL_DEFAULTS;
@@ -1658,6 +1703,24 @@ ret_code_t brd_FactoryReset(ds_reportHandler_t resultHandler)
 
     // initiate deletion
     return ds_Reset(KD2_FILE_ID, resultHandler);
+}
+
+ret_code_t brd_SupportNotif(ble_hps_c_s_t const* pSupportData)
+{
+    if (pSupportData == NULL)
+        return NRF_ERROR_NULL;
+
+    if (pSupportData->flags.inclination_present)
+    {
+
+    }
+
+    if (pSupportData->flags.brake_ind_present)
+    {
+
+    }
+
+    return NRF_SUCCESS;
 }
 
 ret_code_t KD2_GetChannelSetup(KD2_channelSetup_t* pSetup, uint8_t channel)
@@ -1687,6 +1750,9 @@ ret_code_t KD2_SetChannelSetup(KD2_channelSetup_t const* pSetup, uint8_t channel
     KD2_channelSetup_t* pFirstChannel =
         setup.helenaBaseAddr ? &setup.channelSetup[CHANNEL_HELENAFLOOD] : &setup.channelSetup[CHANNEL_CURRENT];
 
+    if (memcmp(&pFirstChannel[channel], pSetup, sizeof(KD2_channelSetup_t)) == 0)
+        return NRF_ERROR_INVALID_STATE; // this error code might be a problem if any function called in storeSetup() returns this code, too
+
     memcpy(&pFirstChannel[channel], pSetup, sizeof(KD2_channelSetup_t));
 
     memcpy(&newSetup.setup, &setup, sizeof(setup));
@@ -1711,6 +1777,9 @@ ret_code_t KD2_SetCompensation(KD2_adcCompensation_t const* pComp, ds_reportHand
 
     if (!isCompensationValid(pComp))
         return NRF_ERROR_INVALID_PARAM;
+
+    if (memcmp(&setup.comp, pComp, sizeof(KD2_adcCompensation_t)) == 0)
+        return NRF_ERROR_INVALID_STATE; // this error code might be a problem if any function called in storeSetup() returns this code, too
 
     if (applyCompensation(pComp) != NRF_SUCCESS)
     {
@@ -1740,6 +1809,18 @@ ret_code_t KD2_SetComPinMode(KD2_comPinMode_t mode, ds_reportHandler_t resultHan
     if (!isComPinModeValid(mode))
         return NRF_ERROR_INVALID_PARAM;
 
+    if (mode == setup.comPinMode)
+        return NRF_ERROR_INVALID_STATE; // this error code might be a problem if any function called in storeSetup() returns this code, too
+
+    if (mode == KD2_COMPIN_COM || setup.comPinMode == KD2_COMPIN_COM)
+    {
+        /// TODO: a restart is required and gatt table changed indication needs to be sent
+    }
+    else
+    {
+        /// TODO: a reset is necessary
+    }
+
     setup.comPinMode = mode;
 
     memcpy(&newSetup.setup, &setup, sizeof(setup));
@@ -1768,7 +1849,7 @@ ret_code_t KD2_SetHelenaCompensation(hbd_calibData_t* pComp)
         return NRF_ERROR_NOT_FOUND;
 
     // helena error codes are mapped to sdk error codes, no conversion necessary
-    return hbd_SetCalibrationData(&helenaInst, pComp);
+    return hbd_SetCalibrationData(&helenaInst, pComp);  /// TODO: check what happens if data hasn't changed
 }
 
 /**END OF FILE*****************************************************************/

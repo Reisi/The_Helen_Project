@@ -44,6 +44,72 @@
 #define BRD_CONFIG_H
 // <<< Use Configuration Wizard in Context Menu >>>\n
 
+//==========================================================
+
+// <h> nRF_BLE_Services
+
+//==========================================================
+
+// <e> BLE_BAS_ENABLED - ble_bas - Battery Service
+//==========================================================
+#ifndef BLE_BAS_ENABLED
+#define BLE_BAS_ENABLED 1
+#endif
+// <e> BLE_BAS_CONFIG_LOG_ENABLED - Enables logging in the module.
+//==========================================================
+#ifndef BLE_BAS_CONFIG_LOG_ENABLED
+#define BLE_BAS_CONFIG_LOG_ENABLED 0
+#endif
+// <o> BLE_BAS_CONFIG_LOG_LEVEL  - Default Severity level
+
+// <0=> Off
+// <1=> Error
+// <2=> Warning
+// <3=> Info
+// <4=> Debug
+
+#ifndef BLE_BAS_CONFIG_LOG_LEVEL
+#define BLE_BAS_CONFIG_LOG_LEVEL 3
+#endif
+
+// <o> BLE_BAS_CONFIG_INFO_COLOR  - ANSI escape code prefix.
+
+// <0=> Default
+// <1=> Black
+// <2=> Red
+// <3=> Green
+// <4=> Yellow
+// <5=> Blue
+// <6=> Magenta
+// <7=> Cyan
+// <8=> White
+
+#ifndef BLE_BAS_CONFIG_INFO_COLOR
+#define BLE_BAS_CONFIG_INFO_COLOR 0
+#endif
+
+// <o> BLE_BAS_CONFIG_DEBUG_COLOR  - ANSI escape code prefix.
+
+// <0=> Default
+// <1=> Black
+// <2=> Red
+// <3=> Green
+// <4=> Yellow
+// <5=> Blue
+// <6=> Magenta
+// <7=> Cyan
+// <8=> White
+
+#ifndef BLE_BAS_CONFIG_DEBUG_COLOR
+#define BLE_BAS_CONFIG_DEBUG_COLOR 0
+#endif
+
+// </e>
+
+// </e>
+
+// </h>
+
 // <h> nRF_Drivers
 
 //==========================================================

@@ -32,6 +32,7 @@ typedef enum
     BLE_HPS_C_EVT_DISCOVERY_COMPLETE,   /**< Event indicating that the Light Control Service has been discovered at the peer. */
     BLE_HPS_C_EVT_DISCOVERY_FAILED,     /**< Event indicating that the Light Control Service has not been discovered at the peer. */
     BLE_HPS_C_EVT_CONTROL_POINT_INDIC,  /**< Event indicating that a indication of Light Control Control Point characteristic has been received from peer. */
+    BLE_HPS_C_EVT_SUPPORT_NOTIF,        /**< Event indicating that a notification of the helen support characteristic has been received from peer. */
 } ble_hps_c_evt_type_t;
 
 /**@brief Helen Project Service Control Point Commands
@@ -75,6 +76,8 @@ typedef struct
 {
     uint16_t                cp_handle;        /**< Handle of the Control Point Characteristic */
     uint16_t                cp_cccd_handle;   /**< Handle of the CCCD of the Control Point Characteristic */
+    uint16_t                s_handle;         /**< Handle of the Support Characteristic */
+    uint16_t                s_cccd_handle;    /**< Handle of the CCCD of the Support Characteristic */
 } ble_hps_c_db_t;
 
 /**@brief Helen Project Service Server specific data */
@@ -83,6 +86,27 @@ typedef struct
     uint16_t                conn_handle;        /**< connection handle as provided by the softdevice */
     ble_hps_c_db_t          hps_db;             /**< Handles related to HPS on the peer*/
 } ble_hps_c_server_spec_t;
+
+/** @brief the support flags field */
+typedef struct
+{
+    uint16_t time_ref_present    : 1;   /**< Flag indication that the time reference field is present */
+    uint16_t brake_ind_present   : 1;   /**< Flag indication that the brake indication stop timestamp field is present */
+    uint16_t left_ind_present    : 1;   /**< Flag indication that the left indicator stop timestamp field is present */
+    uint16_t right_ind_present   : 1;   /**< Flag indication that the right indicator stop timestamp field is present */
+    uint16_t inclination_present : 1;   /**< Flag indication that the inclination field is present */
+} ble_hps_c_s_flags_t;
+
+/** @brief the support structure */
+typedef struct
+{
+    ble_hps_c_s_flags_t flags;          /**< Flags indicating which fields are present */
+    uint16_t          time_ref;         /**< time reference in 1/1024s */
+    uint16_t          brake_ind;        /**< brake indication stop timestamp in 1/1024s */
+    uint16_t          left_ind;         /**< left indicator stop timestamp in 1/1024s */
+    uint16_t          right_ind;        /**< right indicator stop timestamp in 1/1024s */
+    int16_t           inclination;      /**< inclination in 1/100° */
+} ble_hps_c_s_t;
 
 /**@brief Helen Project Service Event structure */
 typedef struct
@@ -97,6 +121,7 @@ typedef struct
     {
         ble_hps_c_db_t        hps_db;       /**< Helen Control Service related handles found on the peer device. This is filled if the evt_type is @ref BLE_HPS_C_EVT_DISCOVERY_COMPLETE.*/
         ble_hps_c_cp_rsp_t    control_point;/**< control point indication received from the peer. This field will be used for the response to @ref BLE_HPS_C_EVT_CONTROL_POINT_INDIC */
+        ble_hps_c_s_t         support;      /**< support notification received from the peer. This field will be used for the response to @ref BLE_HPS_C_EVT_SUPPORT_NOTIF */
     } data;
 } ble_hps_c_evt_t;
 
@@ -243,6 +268,22 @@ uint32_t ble_hps_c_cp_write(ble_hps_c_t * p_ble_hps_c, uint16_t conn_handle, ble
  *                      by the SoftDevice API @ref sd_ble_gattc_write.
  */
 uint32_t ble_hps_c_cp_indic_enable(ble_hps_c_t * p_ble_hps_c, uint16_t conn_handle, bool enable);
+
+
+/**@brief   Function for requesting the peer to start sending notifications of Helen Project
+ *          Support Characteristics.
+ *
+ * @details This function will enable to notification of the support characteristic at the peer
+ *          by writing to the CCCD of the Support Characteristic.
+ *
+ * @param[in]  p_ble_hps_c  Pointer to the Helen Project Service client structure.
+ * @param[in]  enable       true to enable notification, false to disable.
+ *
+ * @retval  NRF_SUCCESS If the SoftDevice has been requested to write to the CCCD of the peer.
+ *                      Otherwise, an error code. This function propagates the error code returned
+ *                      by the SoftDevice API @ref sd_ble_gattc_write.
+ */
+uint32_t ble_hps_c_s_notify_enable(ble_hps_c_t * p_ble_hps_c, uint16_t conn_handle, bool enable);
 
 void ble_hps_c_on_db_disc_evt(ble_hps_c_t * p_ble_hps_c, ble_db_discovery_evt_t const * p_evt);
 

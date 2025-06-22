@@ -1,0 +1,92 @@
+$(OUTPUT_DIRECTORY)/Drake_10.out: \
+  LINKER_SCRIPT  := boards/$(MAKECMDGOALS)/helen_nrf52.ld
+
+# board specific source files
+SRC_FILES += \
+  boards/Drake_10/Xiaomi_drake.c \
+  boards/Drake_10/Drake_10.c \
+  boards/Drake_10/Drake_hmi.c \
+  boards/Drake_10/Drake_adc.c \
+  boards/Drake_10/Drake_i2cs.c \
+  boards/Drake_10/ble_drake.c \
+  boards/Drake_10/Drake_btle.c \
+  boards/Drake_10/Drake_light.c \
+  boards/Drake_10/lis2dh12drv.c \
+  boards/Drake_10/vl53l0x_platform.c \
+  boards/Drake_10/vl53l0xdrv.c \
+  boards/Drake_10/ws2812drv.c \
+  boards/Drake_10/drakedrv.c \
+  boards/Drake_10/charge_control.c \
+  boards/Drake_10/battery_gauge.c \
+  boards/Drake_10/motor_drv.c \
+  boards/Drake_10/motor_control.c \
+  boards/Drake_10/motor_sensor.c \
+  boards/Drake_10/i2c/i2c.c \
+  boards/Drake_10/i2c/i2c_slave.c \
+  boards/Drake_10/dbg_cmd_stats.c \
+  boards/Drake_10/ext/st/lis2dh12-pid/lis2dh12_reg.c \
+  boards/Drake_10/ext/st/VL53L0X_1.0.4/Api/core/src/vl53l0x_api.c \
+  boards/Drake_10/ext/st/VL53L0X_1.0.4/Api/core/src/vl53l0x_api_calibration.c \
+  boards/Drake_10/ext/st/VL53L0X_1.0.4/Api/core/src/vl53l0x_api_core.c \
+  boards/Drake_10/ext/st/VL53L0X_1.0.4/Api/core/src/vl53l0x_api_ranging.c \
+  boards/Drake_10/ext/st/VL53L0X_1.0.4/Api/core/src/vl53l0x_api_strings.c \
+  util/feature_tools.c \
+  util/filter.c \
+  util/brake2d.c \
+  $(SDK_ROOT)/components/ble/ble_services/ble_bas/ble_bas.c \
+  $(SDK_ROOT)/modules/nrfx/mdk/system_nrf52.c \
+  $(SDK_ROOT)/modules/nrfx/mdk/gcc_startup_nrf52.S \
+  $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_twim.c \
+  $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_twis.c \
+  $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_saadc.c \
+  $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_temp.c \
+  $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_pwm.c \
+  $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_comp.c \
+  $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_i2s.c \
+
+#ifeq ($(TYPE),DEBUG)
+#SRC_FILES += \
+#
+#endif
+
+# board specific include folders
+INC_FOLDERS += \
+  boards/Drake_10 \
+  boards/Drake_10/i2c \
+  boards/Drake_10/ext/st/lis2dh12-pid \
+  boards/Drake_10/ext/st/VL53L0X_1.0.4/Api/core/inc \
+  util \
+  $(SDK_ROOT)/components/softdevice/s132/headers/nrf52 \
+  $(SDK_ROOT)/components/ble/ble_services/ble_bas \
+  $(SDK_ROOT)/components/toolchain/cmsis/dsp/Include/ \
+
+# board specific libraries
+LIB_FILES += $(SDK_ROOT)/components/toolchain/cmsis/dsp/GCC/libarm_cortexM4lf_math.a\
+
+# board specific C flags
+CFLAGS += -DARM_MATH_CM4
+CFLAGS += -DFLOAT_ABI_HARD
+CFLAGS += -DNRF52
+CFLAGS += -DNRF52832_XXAA
+CFLAGS += -DS132
+CFLAGS += -mfloat-abi=hard -mfpu=fpv4-sp-d16
+CFLAGS += -D__HEAP_SIZE=8192
+CFLAGS += -D__STACK_SIZE=8192
+CFLAGS += -DSEGGER_RTT_SECTION='".noinit"'
+CFLAGS += -DSEGGER_RTT_BUFFER_SECTION='".noinit"'
+CFLAGS += -DNRFX_SAADC_API_V2
+#CFLAGS += -DSEGGER_RTT_IN_RAM=1
+
+# board specific assembler flags
+ASMFLAGS += -mfloat-abi=hard -mfpu=fpv4-sp-d16
+ASMFLAGS += -DARM_MATH_CM4
+ASMFLAGS += -DFLOAT_ABI_HARD
+ASMFLAGS += -DNRF52
+ASMFLAGS += -DNRF52832_XXAA
+ASMFLAGS += -DS132
+ASMFLAGS += -D__HEAP_SIZE=8192
+ASMFLAGS += -D__STACK_SIZE=8192
+
+# Linker flags
+LDFLAGS += -mfloat-abi=hard -mfpu=fpv4-sp-d16
+

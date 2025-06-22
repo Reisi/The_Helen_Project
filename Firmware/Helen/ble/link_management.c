@@ -94,16 +94,16 @@ static const ble_gap_scan_params_t scanParams[] =
     },
     {   // scan settings for BTLE_SCAN_LOW_LATENCY
         .active        = 0,
-        .interval      = MSEC_TO_UNITS(60, UNIT_0_625_MS),
-        .window        = MSEC_TO_UNITS(30, UNIT_0_625_MS),
+        .interval      = MSEC_TO_UNITS(200, UNIT_0_625_MS),
+        .window        = MSEC_TO_UNITS(50, UNIT_0_625_MS),
         .filter_policy = BLE_GAP_SCAN_FP_WHITELIST,
         .timeout       = 0,
         .scan_phys     = BLE_GAP_PHY_1MBPS,
     },
     {   // scan settings for BTLE_SCAN_SEARCH
         .active        = 0x01,
-        .interval      = MSEC_TO_UNITS(60, UNIT_0_625_MS),
-        .window        = MSEC_TO_UNITS(30, UNIT_0_625_MS),
+        .interval      = MSEC_TO_UNITS(200, UNIT_0_625_MS),
+        .window        = MSEC_TO_UNITS(50, UNIT_0_625_MS),
         .filter_policy = BLE_GAP_SCAN_FP_ACCEPT_ALL,
         .timeout       = MSEC_TO_UNITS(30000, UNIT_10_MS),
         .scan_phys     = BLE_GAP_PHY_1MBPS,
@@ -309,16 +309,13 @@ static ret_code_t setAdvMode(lm_advState_t mode)
     advState.isOpenAdvertising = mode == LM_ADV_OPEN ? true : advState.advType == BTLE_ADV_TYPE_ALWAYS_OPEN;
 
     // check if there are devices to advertise to
-    if (!advState.isOpenAdvertising)
+    if (ble_conn_state_peripheral_conn_count() == NRF_SDH_BLE_PERIPHERAL_LINK_COUNT || // no links available or
+        (!advState.isOpenAdvertising && unconnectedDevices(BLE_GAP_ROLE_PERIPH) == 0)) // no unconnected devices
     {
-        if(unconnectedDevices(BLE_GAP_ROLE_PERIPH) == 0 ||
-           ble_conn_state_peripheral_conn_count() == NRF_SDH_BLE_PERIPHERAL_LINK_COUNT)
-        {
-            // no device to advertise to, advertising is not needed, manually update state and send event
-            sendAdvEvent(LM_ADV_OFF);
-            advState.actual = LM_ADV_OFF;
-            return NRF_SUCCESS;
-        }
+        // no device to advertise to, advertising is not needed, manually update state and send event
+        sendAdvEvent(LM_ADV_OFF);
+        advState.actual = LM_ADV_OFF;
+        return NRF_SUCCESS;
     }
 
     if (mode == LM_ADV_OFF)
@@ -641,11 +638,11 @@ static ret_code_t scanningInit(uint8_t uuidType)
         {
             .uuid = BLE_UUID_HPS_SERVICE,
             .type = uuidType
-        },
+        },/*
         {
             .uuid = BLE_UUID_LCS_SERVICE,
             .type = uuidType
-        }
+        }*/
     };
 
     pendingDevice.waitForDisconnect = BLE_CONN_HANDLE_INVALID;
@@ -879,7 +876,7 @@ static void onDisconnected(uint16_t connHandle, ble_gap_evt_disconnected_t const
             pendingDevice.waitForDisconnect = BLE_CONN_HANDLE_INVALID;
         }
         // otherwise restart scanning
-        else if (scanState.actual != scanState.desired)
+        else
             (void)setScanMode(scanState.desired);   // error logging in setScanMode
     }
 }

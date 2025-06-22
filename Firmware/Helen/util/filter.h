@@ -12,7 +12,6 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include <stdint.h>
-#include <stdbool.h>
 
 /* Exported types ------------------------------------------------------------*/
 typedef struct
@@ -70,14 +69,14 @@ int32_t fil_MovAvg(fil_movAvgInst_t* pInst, int32_t actual);
  */
 void fil_MovAvgReset(fil_movAvgInst_t* pInst, int32_t initValue);
 
-/** @brief moving average filter feed function
+/** @brief low pass filter feed function
  *
  * @param[in] pInst   the filtering instance
  * @param[in] actual  the current value to filter
  */
 void fil_LowPassFeed(fil_lowPassInst_t* pInst, int32_t actual);
 
-/** @brief moving average filter get function
+/** @brief low pass filter get function
  *
  * @param[in] pInst   the filtering instance
  * @return  the filter output

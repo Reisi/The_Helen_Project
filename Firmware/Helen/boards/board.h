@@ -33,12 +33,14 @@ typedef struct
 
 typedef struct
 {
-    uint16_t           maxNameLenght;   // the maximum length of the device name, set to 0 if change is not supported
-                                        // max value is BLE_GAP_DEVNAME_DEFAULT_LEN (31)
-    uint16_t           channelCount;    // number of channels
-    cht_types_t const* pChannelTypes;   // types of channels (pointer to array with channelCount members)
-    brd_comPins_t      comSupported;    // the com pins if available
-    bool               isIMUPresent;    /// TODO: is this necessary, or just for LCS?
+    uint16_t           maxNameLenght;       // the maximum length of the device name, set to 0 if change is not supported
+                                            // max value is BLE_GAP_DEVNAME_DEFAULT_LEN (31)
+    btle_advType_t     advType;             // the type of advertising to be used
+    uint16_t           channelCount;        // number of channels
+    //cht_types_t const* pChannelTypes;       // types of channels (pointer to array with channelCount members)
+    ble_hps_f_ch_size_t const* pChannelSize;// channel sizes (pointer to array with channelCount members)
+    brd_comPins_t      comSupported;        // the com pins if available
+    bool               isIMUPresent;        /// TODO: is this necessary, or just for LCS?
 } brd_features_t;
 
 typedef struct
@@ -56,7 +58,7 @@ typedef struct
 
 typedef enum
 {
-    BRD_PM_OFF = 0, // lowest possible power mode, there will be no wakeup from this mode
+    BRD_PM_OFF = 0, // lowest possible power mode, there will be no wakeup from this mode (until now this mode is not used)
     BRD_PM_STANDBY, // "normal" low power mode, light output should be off
     BRD_PM_IDLE,    // operational mode, send status messages to ble at about 1Hz
 } brd_powerMode_t;
@@ -115,7 +117,7 @@ void brd_EnableLed(hmi_ledType_t color, bool enable);
  * @param[in] resultHandler  the handler to use to report the result
  * @return    NRF_SUCCESS or an propagated error code
  */
-ret_code_t brd_UpdateChannelConfig(ble_lcs_ctrlpt_mode_cnfg_t const* pLcs, ds_reportHandler_t resultHandler);
+//ret_code_t brd_UpdateChannelConfig(ble_lcs_ctrlpt_mode_cnfg_t const* pLcs, ds_reportHandler_t resultHandler);
 
 /** @brief function to get the current channel configuration
  *
@@ -149,6 +151,13 @@ ret_code_t brd_SetDeviceName(char const* pNewName, ds_reportHandler_t resultHand
  * @return NRF_SUCCESS or a propagated error
  */
 ret_code_t brd_FactoryReset(ds_reportHandler_t resultHandler);
+
+/** @brief function to relay a notification from the support characteristic
+ *
+ * @param[in] pSupportData  support data
+ * @return NRF_SUCCESS, NRF_ERROR_NULL
+ */
+ret_code_t brd_SupportNotif(ble_hps_c_s_t const* pSupportData);
 
 #endif // BOARD_H_INCLUDED
 

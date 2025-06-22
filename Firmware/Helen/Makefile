@@ -1,5 +1,5 @@
 PROJECT_NAME     := Helen
-TARGETS          := KD2_10
+#TARGETS          := KD2_10
 
 # release is the standard output, to compile debug configuration override variable in command line
 TYPE = RELEASE
@@ -16,16 +16,12 @@ SRC_FILES += \
   ble/link_management.c \
   ble/ble_hps.c \
   ble/ble_hps_c.c \
-  ble/ble_lcs.c \
-  ble/ble_lcs_ctrlpt.c \
-  ble/ble_lcs_c.c \
   ble/ble_hids_c.c \
   ble/btle.c \
   com/comreloaded.c \
   com/com_message_handling.c \
   debug/debug.c \
   debug/watchdog.c \
-  $(wildcard *.c remotes/*.c) \
   ext/segger/JLINK_MONITOR.c \
   ext/segger/JLINK_MONITOR_ISR_SES.s \
   $(SDK_ROOT)/components/ble/ble_advertising/ble_advertising.c \
@@ -101,7 +97,11 @@ SRC_FILES += \
   $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_wdt.c \
   $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_timer.c \
   $(SDK_ROOT)/modules/nrfx/drivers/src/prs/nrfx_prs.c \
+  $(SDK_ROOT)/modules/nrfx/drivers/src/nrfx_spim.c \
   $(SDK_ROOT)/modules/nrfx/soc/nrfx_atomic.c \
+  #ble/ble_lcs.c \
+  #ble/ble_lcs_ctrlpt.c \
+  #ble/ble_lcs_c.c \
 
 # Include folders common to all targets
 INC_FOLDERS += \
@@ -257,4 +257,4 @@ TEMPLATE_PATH := $(SDK_ROOT)/components/toolchain/gcc
 
 include $(TEMPLATE_PATH)/Makefile.common
 
-$(foreach target, $(TARGETS), $(call define_target, $(target)))
+$(foreach target, $(MAKECMDGOALS), $(call define_target, $(target)))

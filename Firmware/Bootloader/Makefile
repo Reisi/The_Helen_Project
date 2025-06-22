@@ -1,5 +1,5 @@
 PROJECT_NAME     := Helen_Bootloader
-TARGETS          := KD2_10
+TARGETS          := $(MAKECMDGOALS)
 OUTPUT_DIRECTORY := bin
 
 #SDK_ROOT := ../../../../../../Techdocs/Nordic/nRF5_SDK_17.1.0_ddde560

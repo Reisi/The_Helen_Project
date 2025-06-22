@@ -42,7 +42,8 @@ NRF_LOG_MODULE_REGISTER();
 /* Private macros ------------------------------------------------------------*/
 
 /* Private defines -----------------------------------------------------------*/
-#define DEAD_BEEF   0xDEADBEEF  /**< Value used as error code on stack dump, can be used to identify stack location on stack unwind. */
+#define DEAD_BEEF       0xDEADBEEF  /**< Value used as error code on stack dump, can be used to identify stack location on stack unwind. */
+#define RESET_NOT_READ  0xFFFFFFFF
 
 /* Private function prototype ------------------------------------------------*/
 #ifdef DEBUG_EXT
@@ -54,6 +55,7 @@ static uint32_t initNus(void * pContext);
 BLE_NUS_DEF(nusGattS, NRF_SDH_BLE_TOTAL_LINK_COUNT);
 BTLE_SERVICE_REGISTER(nusService, initNus, NULL);
 #endif
+static uint32_t resetReason = RESET_NOT_READ;
 
 /* Private functions ---------------------------------------------------------*/
 static ret_code_t logInit(void)
@@ -173,6 +175,12 @@ bool dbg_Execute(void)
             pCommand->pCommandExecute();
     }
 #endif
+
+    if (resetReason == RESET_NOT_READ)
+    {
+        (void)sd_power_reset_reason_get((uint32_t*)&resetReason);
+        NRF_LOG_INFO("reset reason %d", resetReason);
+    }
 
     wdg_Feed();
 

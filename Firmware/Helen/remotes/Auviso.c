@@ -12,7 +12,7 @@
 #include "remote.h"
 #include "hmi.h"
 
-#include "KD2_curr.h"
+//#include "KD2_curr.h"
 
 /* Defines -------------------------------------------------------------------*/
 #define UUID16_SIZE             2       /**< Size of 16 bit UUID. */

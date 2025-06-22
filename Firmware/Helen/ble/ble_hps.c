@@ -16,6 +16,7 @@
 #define BLE_UUID_HPS_FEAT_CHARACTERISTIC 0x0303  /**< The UUID of the feature characteristic */
 #define BLE_UUID_HPS_MODE_CHARACTERISTIC 0x0304  /**< The UUID of the modes characteristic */
 #define BLE_UUID_HPS_CTPT_CHARACTERISTIC 0x0305  /**< The UUID of the control point characteristic */
+#define BLE_UUID_HPS_SUPP_CHARACTERISTIC 0x0306  /**< The UUID of the support characteristic */
 
 #define BLE_HPS_M_MIN_CHAR_LEN           3       /**< minimum length of the measurement characteristic */
 #define BLE_HPS_M_MAX_CHAR_LEN           8       /**< maximum length of the measurement characteristic */
@@ -24,6 +25,9 @@
 
 #define BLE_HPS_CP_MIN_CHAR_LEN          1       /**< minimum length of the control point characteristic */
 #define BLE_HPS_CP_MAX_CHAR_LEN          20      /**< maximum length of the control point characteristic */
+
+#define BLE_HPS_S_MIN_CHAR_LEN           2       /**< minimum length of the sipport characteristic */
+#define BLE_HPS_S_MAX_CHAR_LEN           10      /**< maximum length of the support characteristic */
 
 /* Section variable ----------------------------------------------------------*/
 NRF_SECTION_DEF(ble_hps_brd_char, ble_hps_brd_char_t);
@@ -197,6 +201,24 @@ static uint32_t cp_char_add(ble_hps_t * p_hps, ble_hps_init_t const * p_hps_init
     return characteristic_add(p_hps->service_handle, &add_char_params, &p_hps->cp_handles);
 }
 
+static uint32_t support_char_add(ble_hps_t * p_hps)
+{
+    ble_add_char_params_t add_char_params;
+    uint8_t               init_value[BLE_HPS_S_MIN_CHAR_LEN] = {0};
+
+    memset(&add_char_params, 0, sizeof(add_char_params));
+    add_char_params.uuid              = BLE_UUID_HPS_SUPP_CHARACTERISTIC;
+    add_char_params.uuid_type         = p_hps->uuid_type;
+    add_char_params.init_len          = BLE_HPS_S_MIN_CHAR_LEN;
+    add_char_params.max_len           = BLE_HPS_S_MAX_CHAR_LEN;
+    add_char_params.is_var_len        = true;
+    add_char_params.p_init_value      = init_value;
+    add_char_params.char_props.notify = 1;
+    add_char_params.cccd_write_access = SEC_OPEN;
+
+    return characteristic_add(p_hps->service_handle, &add_char_params, &p_hps->s_handles);
+}
+
 static void send_event(ble_hps_evt_type_t type, ble_hps_t const * p_hps, ble_hps_client_spec_t const * p_client)
 {
     ble_hps_evt_t evt = {0};
@@ -254,6 +276,16 @@ static void on_connect(ble_hps_t * p_hps, ble_evt_t const * p_ble_evt)
         p_client->is_cp_indic_enabled = true;
         send_event(BLE_HPS_EVT_CP_INDICATION_ENABLED, p_hps, p_client);
     }
+
+    // check the hosts support CCCD value to inform the application if it has to send notifications
+    err_code = sd_ble_gatts_value_get(p_ble_evt->evt.gap_evt.conn_handle,
+                                      p_hps->s_handles.cccd_handle,
+                                      &gatts_val);
+    if (err_code == NRF_SUCCESS && ble_srv_is_notification_enabled(gatts_val.p_value))
+    {
+        p_client->is_m_notfy_enabled = true;
+        send_event(BLE_HPS_EVT_S_NOTIVICATION_ENABLED, p_hps, p_client);
+    }
 }
 
 static void on_disconnect(ble_hps_t * p_hps, ble_evt_t const * p_ble_evt)
@@ -280,6 +312,12 @@ static void on_disconnect(ble_hps_t * p_hps, ble_evt_t const * p_ble_evt)
     {
         p_client->is_cp_indic_enabled = false;
         send_event(BLE_HPS_EVT_CP_INDICATION_DISABLED, p_hps, p_client);
+    }
+
+    if (p_client->is_s_notfy_enabled)
+    {
+        p_client->is_s_notfy_enabled = false;
+        send_event(BLE_HPS_EVT_S_NOTIVICATION_DISABLED, p_hps, p_client);
     }
 
     p_client->conn_handle = BLE_CONN_HANDLE_INVALID;
@@ -346,6 +384,36 @@ static void on_cp_cccd_write(ble_hps_t * p_hps, ble_gatts_evt_write_t const * p_
     }
 }
 
+static void on_s_cccd_write(ble_hps_t * p_hps, ble_gatts_evt_write_t const * p_evt_write, uint16_t conn_handle)
+{
+    ble_hps_client_spec_t * p_client;
+
+    p_client = get_client_data_by_conn_handle(conn_handle, p_hps->p_client);
+    if (p_client == NULL)
+    {
+        if (p_hps->error_handler != NULL)
+        {
+            p_hps->error_handler(NRF_ERROR_NOT_FOUND);
+        }
+        return;
+    }
+
+    if (p_evt_write->len == 2)
+    {
+        // CCCD written, update notification state
+       if (ble_srv_is_notification_enabled(p_evt_write->data))
+        {
+            p_client->is_s_notfy_enabled = true;
+            send_event(BLE_HPS_EVT_S_NOTIVICATION_ENABLED, p_hps, p_client);
+        }
+        else
+        {
+            p_client->is_s_notfy_enabled = false;
+            send_event(BLE_HPS_EVT_S_NOTIVICATION_DISABLED, p_hps, p_client);
+        }
+    }
+}
+
 static void on_write(ble_hps_t * p_hps, ble_evt_t const * p_ble_evt)
 {
     ble_gatts_evt_write_t const * p_evt_write = &p_ble_evt->evt.gatts_evt.params.write;
@@ -357,6 +425,10 @@ static void on_write(ble_hps_t * p_hps, ble_evt_t const * p_ble_evt)
     else if (p_evt_write->handle == p_hps->cp_handles.cccd_handle)
     {
         on_cp_cccd_write(p_hps, p_evt_write, p_ble_evt->evt.gatts_evt.conn_handle);
+    }
+    else if (p_evt_write->handle == p_hps->s_handles.cccd_handle)
+    {
+        on_s_cccd_write(p_hps, p_evt_write, p_ble_evt->evt.gatts_evt.conn_handle);
     }
 }
 
@@ -395,114 +467,46 @@ static uint16_t m_encode(ble_hps_m_t const * p_data, uint8_t * p_buffer)
     return len;
 }
 
-/*static void on_mem_request(ble_hps_t * p_hps, ble_evt_t const * p_ble_evt)
+static uint16_t s_encode(ble_hps_s_t const * p_data, uint8_t * p_buffer)
 {
-    uint32_t err_code;
+    uint16_t len = 0;
 
-    if (p_ble_evt->evt.common_evt.params.user_mem_request.type == BLE_USER_MEM_TYPE_GATTS_QUEUED_WRITES &&
-        p_hps->modes.conn_handle == BLE_CONN_HANDLE_INVALID)
+    union
     {
-        err_code = sd_ble_user_mem_reply(p_ble_evt->evt.common_evt.conn_handle, NULL);
-        if (err_code == NRF_SUCCESS)
-        {
-            p_hps->modes.conn_handle = p_ble_evt->evt.common_evt.conn_handle;
-        }
-        else if (p_hps->error_handler != NULL)
-        {
-            p_hps->error_handler(err_code);
-        }
+        ble_hps_s_flags_t raw;
+        uint16_t          encoded;
+    } flags;
+
+    flags.raw = p_data->flags;
+    len += uint16_encode(flags.encoded, &p_buffer[len]);
+
+    if (flags.raw.time_ref_present)
+    {
+        len += uint16_encode(p_data->time_ref, &p_buffer[len]);
     }
+
+    if (flags.raw.brake_ind_present)
+    {
+        len += uint16_encode(p_data->brake_ind, &p_buffer[len]);
+    }
+
+    if (flags.raw.left_ind_present)
+    {
+        len += uint16_encode(p_data->left_ind, &p_buffer[len]);
+    }
+
+    if (flags.raw.right_ind_present)
+    {
+        len += uint16_encode(p_data->right_ind, &p_buffer[len]);
+    }
+
+    if (flags.raw.inclination_present)
+    {
+        len += uint16_encode(p_data->inclination, &p_buffer[len]);
+    }
+
+    return len;
 }
-
-static void on_mem_release(ble_hps_t * p_hps, ble_evt_t const * p_ble_evt)
-{
-    if (p_ble_evt->evt.common_evt.params.user_mem_release.type == BLE_USER_MEM_TYPE_GATTS_QUEUED_WRITES &&
-        p_hps->modes.conn_handle == p_ble_evt->evt.common_evt.conn_handle)
-    {
-        p_hps->modes.conn_handle = BLE_CONN_HANDLE_INVALID;
-    }
-}
-
-static void on_rw_authorize_request(ble_hps_t * p_hps, ble_evt_t const * p_ble_evt)
-{
-    uint32_t                              err_code;
-    ble_gatts_rw_authorize_reply_params_t auth_reply = {0};
-    ble_hps_evt_t evt = {0};
-    ble_gatts_evt_rw_authorize_request_t const * p_auth_req = &p_ble_evt->evt.gatts_evt.params.authorize_request;
-    ble_hps_client_spec_t * p_client;
-
-    if (p_auth_req->request.write.op == BLE_GATTS_OP_EXEC_WRITE_REQ_NOW)
-        SEGGER_RTT_printf(0, "rwauth %d\n\r", p_auth_req->request.write.op);
-
-    if (p_ble_evt->evt.gatts_evt.conn_handle != p_hps->modes.conn_handle ||
-        p_auth_req->type != BLE_GATTS_AUTHORIZE_TYPE_WRITE)
-    {
-        return;
-    }
-
-    p_client = get_client_data_by_conn_handle(p_ble_evt->evt.gatts_evt.conn_handle, p_hps->p_client);
-    if (p_client == NULL)
-    {
-        if (p_hps->error_handler != NULL)
-        {
-            p_hps->error_handler(NRF_ERROR_NOT_FOUND);
-        }
-        return;
-    }
-
-    if (p_auth_req->request.write.op == BLE_GATTS_OP_PREP_WRITE_REQ &&
-        p_auth_req->request.write.handle == p_hps->modes_handles.value_handle)
-    {
-        uint16_t offset = p_auth_req->request.write.offset;
-        uint16_t len    = p_auth_req->request.write.len;
-        if (offset >= p_hps->modes.buffer.len)
-        {
-            auth_reply.params.write.gatt_status = BLE_GATT_STATUS_ATTERR_INVALID_OFFSET;
-        }
-        else if (offset + len > p_hps->modes.buffer.len)
-        {
-            auth_reply.params.write.gatt_status = BLE_GATT_STATUS_ATTERR_INVALID_ATT_VAL_LENGTH;
-        }
-        else
-        {
-            auth_reply.params.write.gatt_status = BLE_GATT_STATUS_SUCCESS;
-            memcpy(&p_hps->modes.buffer.p_mem[offset], p_auth_req->request.write.data, len);
-        }
-
-        auth_reply.type                = BLE_GATTS_AUTHORIZE_TYPE_WRITE;
-        auth_reply.params.write.update = 1;
-        auth_reply.params.write.offset = offset;
-        auth_reply.params.write.len    = len;
-        auth_reply.params.write.p_data = &p_hps->modes.buffer.p_mem[offset];
-    }
-    else if (p_auth_req->request.write.op == BLE_GATTS_OP_EXEC_WRITE_REQ_NOW)
-    {
-        evt.evt_type = BLE_HPS_EVT_MODE_CONFIG_CHANGED;
-        evt.p_hps = p_hps;
-        evt.p_client = p_client;
-        evt.params.p_modes = (ble_hps_modes_t const*)p_auth_req->request.write.data;    // does this work?
-
-        auth_reply.params.write.gatt_status = BLE_GATT_STATUS_ATTERR_WRITE_NOT_PERMITTED;
-        auth_reply.type = BLE_GATTS_AUTHORIZE_TYPE_WRITE;
-        if (p_hps->evt_handler != NULL)
-        {
-            auth_reply.params.write.gatt_status = p_hps->evt_handler(&evt);
-        }
-    }
-    else if (p_auth_req->request.write.op == BLE_GATTS_OP_EXEC_WRITE_REQ_CANCEL)
-    {
-        auth_reply.params.write.gatt_status = BLE_GATT_STATUS_SUCCESS;
-        auth_reply.type                     = BLE_GATTS_AUTHORIZE_TYPE_WRITE;
-
-        p_hps->modes.conn_handle = BLE_CONN_HANDLE_INVALID;
-    }
-
-    err_code = sd_ble_gatts_rw_authorize_reply(p_client->conn_handle, &auth_reply);
-    if (err_code != NRF_SUCCESS && p_hps->error_handler != NULL)
-    {
-        p_hps->error_handler(err_code);
-    }
-}*/
 
 static bool cp_decode(uint8_t const* p_data, uint16_t len,
                       ble_hps_cp_t * p_decoded, ble_hps_cp_rsp_ind_t * p_response)
@@ -814,6 +818,13 @@ uint32_t ble_hps_init(ble_hps_t * p_hps, uint8_t max_clients, const ble_hps_init
         return err_code;
     }
 
+    // add support characteristic
+    err_code = support_char_add(p_hps);
+    if (err_code != NRF_SUCCESS)
+    {
+        return err_code;
+    }
+
     return NRF_SUCCESS;
 }
 
@@ -851,18 +862,6 @@ void ble_hps_on_ble_evt(ble_evt_t const * p_ble_evt, void * p_context)
     case BLE_GATTS_EVT_HVN_TX_COMPLETE:
         on_tx_complete(p_hps);
         break;
-
-    /*case BLE_EVT_USER_MEM_REQUEST:
-        on_mem_request(p_hps, p_ble_evt);
-        break;
-
-    case BLE_EVT_USER_MEM_RELEASE:
-        on_mem_release(p_hps, p_ble_evt);
-        break;
-
-    case BLE_GATTS_EVT_RW_AUTHORIZE_REQUEST:
-        on_rw_authorize_request(p_hps, p_ble_evt);
-        break;*/
 
     default:
         break;
@@ -918,6 +917,38 @@ uint32_t ble_hps_measurement_send(ble_hps_t const * p_hps, uint16_t conn_handle,
 
     memset(&hvx_params, 0, sizeof(ble_gatts_hvx_params_t));
     hvx_params.handle = p_hps->m_handles.value_handle;
+    hvx_params.type   = BLE_GATT_HVX_NOTIFICATION;
+    hvx_params.offset = 0;
+    hvx_params.p_len  = &hvx_len;
+    hvx_params.p_data = encoded_data;
+
+    err_code = sd_ble_gatts_hvx(conn_handle, &hvx_params);
+    if (err_code == NRF_SUCCESS && hvx_len != len)
+    {
+        err_code = NRF_ERROR_DATA_SIZE;
+    }
+
+    return err_code;
+}
+
+uint32_t ble_hps_support_send(ble_hps_t const * p_hps, uint16_t conn_handle, ble_hps_s_t const * p_data)
+{
+    if (p_hps == NULL || p_data == NULL)
+    {
+        return NRF_ERROR_NULL;
+    }
+
+    uint32_t               err_code;
+    uint8_t                encoded_data[BLE_HPS_S_MAX_CHAR_LEN];
+    uint16_t               len;
+    uint16_t               hvx_len;
+    ble_gatts_hvx_params_t hvx_params;
+
+    len     = s_encode(p_data, encoded_data);
+    hvx_len = len;
+
+    memset(&hvx_params, 0, sizeof(ble_gatts_hvx_params_t));
+    hvx_params.handle = p_hps->s_handles.value_handle;
     hvx_params.type   = BLE_GATT_HVX_NOTIFICATION;
     hvx_params.offset = 0;
     hvx_params.p_len  = &hvx_len;

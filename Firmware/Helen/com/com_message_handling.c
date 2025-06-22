@@ -60,7 +60,7 @@ typedef struct
 
 typedef struct
 {
-    q7_9_t soc;
+    q8_t soc;
     bool requested;     // indicating if remote transfer was requested
     uint32_t timestamp; // timestamp of last reception
 } battery_t;
@@ -104,9 +104,9 @@ static void onStatusReceived(com_message_t const* pMsg)
     {
         i = pMsg->data[6];                  // soc in com units
 
-        i <<= 9;                            // convert to q7_9_t
-        i *= 100;
-        i /= 255;
+        //i <<= 9;                            // convert to q7_9_t
+        //i *= 100;
+        //i /= 255;
 
         battery.soc = i;
         battery.requested = false;
@@ -337,14 +337,14 @@ ret_code_t cmh_GetTaillightPower(q3_13_t* pPower)
     return retVal;
 }
 
-ret_code_t cmh_GetBatterySOC(q7_9_t* pSOC)
+ret_code_t cmh_GetBatterySOC(q8_t* pSOCinPercent)
 {
-    if (pSOC == NULL)
+    if (pSOCinPercent == NULL)
         return NRF_ERROR_NULL;
 
     ret_code_t retVal;
     uint32_t time = app_timer_cnt_get();
-    *pSOC = battery.soc;
+    *pSOCinPercent = battery.soc;
 
     if (time == 0)
         retVal = NRF_ERROR_INVALID_STATE;   // timer inactive

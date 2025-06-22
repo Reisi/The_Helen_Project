@@ -24,6 +24,7 @@ NRF_LOG_MODULE_REGISTER();
 
 #include "fds.h"
 #include "nrf_log.h"
+#include "nrf_pwr_mgmt.h"
 
 #include "data_storage.h"
 #include "debug.h"
@@ -72,8 +73,41 @@ typedef struct
 static ret_code_t         initResult = NRF_ERROR_INVALID_STATE;
 static userHandlers_t     userHandlers[DS_MAX_USERS];
 static fds_record_t       pendingRecords[DS_MAX_USERS];
+static bool               shutdownPending;
 
 /* Private functions ---------------------------------------------------------*/
+/**@brief Handler for shutdown preparation.
+ *
+ * @details During shutdown procedures, this function will be called at a 1 second interval
+ *          untill the function returns true. When the function returns true, it means that the
+ *          app is ready to reset to DFU mode.
+ *
+ * @param[in]   event   Power manager event.
+ *
+ * @retval  True if shutdown is allowed by this power manager handler, otherwise false.
+ */
+static bool ds_shutdown_handler(nrf_pwr_mgmt_evt_t event)
+{
+    // prevent shutdown if any flash operation is ongoing
+    for (uint32_t i = 0; i < ARRAY_SIZE(userHandlers); i++)
+    {
+        if (userHandlers[i].fileId != FILE_ID_FREE)
+        {
+            NRF_LOG_INFO("storing data, preventing shutdown");
+            shutdownPending = true;
+            return false;
+        }
+    }
+
+    NRF_LOG_INFO("no data storing active, allowing shutdown")
+    return true;
+}
+
+//lint -esym(528, m_app_shutdown_handler)
+/**@brief Register application shutdown handler with priority 0.
+ */
+NRF_PWR_MGMT_HANDLER_REGISTER(ds_shutdown_handler, 0);
+
 /** @brief function to get the handler structure for a user (identified by its
  *         file ID), use FILE_ID_FREE to get a empty one, returns NULL if not
  *         found or no free one available.
@@ -199,6 +233,21 @@ static void fdsEventHandler(fds_evt_t const* pEvt)
         break;
     default:
         break;
+    }
+
+    // continue shutdown, if no more storing operations pending
+    if (shutdownPending)
+    {
+        for (uint32_t i = 0; i < ARRAY_SIZE(userHandlers); i++)
+        {
+            if (userHandlers[i].fileId != FILE_ID_FREE)
+            {
+                NRF_LOG_INFO("storing data, preventing shutdown");
+                return;
+            }
+        }
+        shutdownPending = false;
+        nrf_pwr_mgmt_shutdown(NRF_PWR_MGMT_SHUTDOWN_CONTINUE);
     }
 }
 

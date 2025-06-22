@@ -97,7 +97,7 @@ ret_code_t mm_FactoryReset(ds_reportHandler_t resultHandler);
 
 /**< temporary functions for lcs */
 
-ret_code_t mm_UpdateGroupConfig(ble_lcs_ctrlpt_group_cnfg_t const* pLcs, ds_reportHandler_t resultHandler);
+/*ret_code_t mm_UpdateGroupConfig(ble_lcs_ctrlpt_group_cnfg_t const* pLcs, ds_reportHandler_t resultHandler);
 
 ret_code_t mm_UpdateModeConfig(ble_lcs_ctrlpt_mode_cnfg_t const* pLcs, ds_reportHandler_t resultHandler);
 
@@ -107,7 +107,7 @@ ret_code_t mm_SetPrefMode(uint8_t mode, ds_reportHandler_t resultHandler);
 
 uint8_t mm_GetTempMode(void);
 
-ret_code_t mm_SetTempMode(uint8_t mode, ds_reportHandler_t resultHandler);
+ret_code_t mm_SetTempMode(uint8_t mode, ds_reportHandler_t resultHandler);*/
 
 #endif // MODE_MANAGEMENT_H_INCLUDED
 

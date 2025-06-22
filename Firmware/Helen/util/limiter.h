@@ -12,7 +12,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include <stdint.h>
-
+#include <stdbool.h>
 #include "sdk_errors.h"
 
 #include "filter.h"

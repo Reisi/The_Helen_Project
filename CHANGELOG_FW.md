@@ -3,6 +3,26 @@ All notable changes to the Helen firmware will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## [3.2.0-beta] - 2025-06-17
+
+### Changed
+- battery info type, added LCO as 0, moved NMC to 1
+
+### Known Issues
+- unstable regulator at low currents -> visible flickering
+- voltage limiter has delay
+- temperature limiter overshoots
+
+
+## [3.2.0-beta] - 2025-06-17
+### Added
+- Drake
+
+### Known Issues
+- unstable regulator at low currents -> visible flickering
+- voltage limiter has delay
+- temperature limiter overshoots
+
 ## [3.1.1] - 2024-06-20
 ### Fixed
 - some minor bugs

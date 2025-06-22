@@ -77,7 +77,7 @@ typedef struct
 
 /* Private variables ---------------------------------------------------------*/
 static mm_modeChangedHandler_t modeChangeHandler;
-static mmState_t               state __attribute__((section(".noinit")));;       /// TODO: put into no init section
+static mmState_t               state __attribute__((section(".noinit")));
 static mm_modeConfig_t         modes[MM_NUM_OF_MODES] = MODES_DEFAULTS;
 static storageFormat_t         newModes  __ALIGN(4) = MODES_STR_DEFAULTS;
 
@@ -619,7 +619,7 @@ ret_code_t mm_FactoryReset(ds_reportHandler_t resultHandler)
 
 /**< temporary functions to support light control service */
 
-#if (MM_NUM_OF_MODES & (MM_NUM_OF_MODES - 1)) != 0
+/*#if (MM_NUM_OF_MODES & (MM_NUM_OF_MODES - 1)) != 0
 #error temporary lcs functions only working with mode numbers of power of two
 #endif
 
@@ -753,6 +753,6 @@ ret_code_t mm_SetTempMode(uint8_t mode, ds_reportHandler_t resultHandler)
     memcpy(modes, newModes.modes, sizeof(modes));
 
     return storeModes(DEFAULT_SET, resultHandler);
-}
+}*/
 
 /**END OF FILE*****************************************************************/

@@ -23,6 +23,7 @@
 #include "ble_KD2.h"
 #include "KD2_10.h"
 #include "btle.h"
+#include "ble_bas.h"
 
 /* External variables --------------------------------------------------------*/
 
@@ -40,8 +41,8 @@ static uint32_t initKD2Service(void* pContext);
 
 /* Private variables ---------------------------------------------------------*/
 static init_t init;
-//static brd_features_t const* pFtrs;
 BLE_KD2_DEF(KD2Gatts, NRF_SDH_BLE_TOTAL_LINK_COUNT);
+BLE_BAS_DEF(basGatts);
 BTLE_SERVICE_REGISTER(KD2Service, initKD2Service, &init);
 static uint16_t pendingConnHandle = BLE_CONN_HANDLE_INVALID;
 static ble_KD2_cp_op_code_t pendingOpCode;
@@ -128,6 +129,8 @@ static void onChannelSetupSet(uint16_t connHandle, uint8_t channel, ble_KD2_chan
         errCode = KD2_SetChannelSetup(&setup, channel, resultHandler);
         if (errCode == NRF_ERROR_INVALID_PARAM)
             rsp.status = BLE_KD2_CP_RSP_VAL_INVALID;
+        else if (errCode == NRF_ERROR_INVALID_STATE)    // nothing changed
+            rsp.status = BLE_KD2_CP_RSP_VAL_SUCCESS;
         else if (errCode == NRF_SUCCESS)
         {
             pendingConnHandle = connHandle;
@@ -177,6 +180,8 @@ static void onComPinSet(uint16_t connHandle, ble_KD2_com_pin_t comPinMode)
         errCode = KD2_SetComPinMode(comPinMode, resultHandler);
         if (errCode == NRF_ERROR_INVALID_PARAM)
             rsp.status = BLE_KD2_CP_RSP_VAL_INVALID;
+        else if (errCode == NRF_ERROR_INVALID_STATE)    // nothing changed
+            rsp.status = BLE_KD2_CP_RSP_VAL_SUCCESS;
         else if (errCode == NRF_SUCCESS)
         {
             pendingConnHandle = connHandle;
@@ -239,6 +244,8 @@ static void onIntCompSet(uint16_t connHandle, ble_KD2_int_comp_t const *pComp)
         errCode = KD2_SetCompensation(&comp, resultHandler);
         if (errCode == NRF_ERROR_INVALID_PARAM)
             rsp.status = BLE_KD2_CP_RSP_VAL_INVALID;
+        else if (errCode == NRF_ERROR_INVALID_STATE)  // nothing changed
+            rsp.status = BLE_KD2_CP_RSP_VAL_SUCCESS;
         else if (errCode == NRF_SUCCESS)
         {
             pendingConnHandle = connHandle;
@@ -388,8 +395,23 @@ static uint32_t initKD2Service(void* pContext)
     if (init.pFtrs == NULL)
         return NRF_ERROR_NULL;
 
+    // if com is available, battery soc might be available, so add battery service
+    if (init.pFtrs->comSupported.rx != COM_PIN_NOT_USED)
+    {
+        ble_bas_init_t basInit = {0};
+
+        uint8_t batteryLevel         = 0; /// TODO: is there a way to initialize with actual value?
+        basInit.support_notification = true;
+        basInit.initial_batt_level   = batteryLevel;
+        basInit.bl_rd_sec            = SEC_OPEN;
+        basInit.bl_cccd_wr_sec       = SEC_OPEN;
+        ret_code_t errCode = ble_bas_init(&basGatts, &basInit);
+        if (errCode != NRF_SUCCESS)
+            return errCode;
+    }
+
     // com pin is available last channel is a pwm channel
-    bool comSupported = init.pFtrs->pChannelTypes[init.pFtrs->channelCount - 1] == CHT_TYPE_PWM ? true : false;
+    bool comSupported = init.pFtrs->pChannelSize[init.pFtrs->channelCount - 1].channel_description == BLE_HPS_CH_DESC_PWM ? true : false;
 
     kd2Init.feature.config.channel_config_supported = 1;
     kd2Init.feature.config.com_pin_mode_supported   = comSupported ? 1 : 0;
@@ -397,7 +419,7 @@ static uint32_t initKD2Service(void* pContext)
 
 #ifdef DEBUG_EXT
     // helena driver board is available with at least 3 channels and the second one is a current channel
-    bool helenaSupported = init.pFtrs->channelCount >= 3 && init.pFtrs->pChannelTypes[1] == CHT_TYPE_CURRENT ? true : false;
+    bool helenaSupported = init.pFtrs->channelCount >= 3 && init.pFtrs->pChannelSize[1].channel_description == BLE_HPS_CH_DESC_CURRENT ? true : false;
 
     kd2Init.feature.config.internal_comp_supported  = 1;
     kd2Init.feature.config.external_comp_supported  = helenaSupported ? 1 : 0;
@@ -431,6 +453,16 @@ ret_code_t KD2_btle_Init(brd_features_t const* pFeatures, bool isImuPresent)//ui
 
     // ble isn't initialized yet, impossible to add service here
     return NRF_SUCCESS;
+}
+
+ret_code_t KD2_btle_BatteryLevelUpdate(q8_t batterySoc)
+{
+    if (init.pFtrs->comSupported.rx == COM_PIN_NOT_USED)
+        return NRF_ERROR_NOT_SUPPORTED;
+
+    uint8_t batteryLevel = ((uint16_t)batterySoc * 100) >> 8;
+
+    return ble_bas_battery_level_update(&basGatts, batteryLevel, BLE_CONN_HANDLE_ALL);
 }
 
 /**END OF FILE*****************************************************************/

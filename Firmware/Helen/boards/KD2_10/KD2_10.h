@@ -85,60 +85,6 @@ ret_code_t KD2_GetChannelSetup(KD2_channelSetup_t* pSetup, uint8_t channel);
  */
 ret_code_t KD2_SetChannelSetup(KD2_channelSetup_t const* pSetup, uint8_t channel, ds_reportHandler_t resultHandler);
 
-/** @brief function to retrieve the channel limits
- *
- * @note the provided array size should be at least as high as the reported
- *       channel count at initialization
- * @param[out]    pLimits the channel limits
- * @param[in/out] pSize   in: the available size, out: the number of channels
- * @return NRF_SUCCESS, NRF_ERROR_NULL, NRF_ERROR_NO_MEM if buffer is to small
- */
-//ret_code_t KD2_GetChannelLimits(KD2_target_t* pLimits, uint8_t* pSize);
-
-/** @brief function to set new channel limits
- *
- * @param[in] pLimits the channel limits
- * @param[in] cnt     the number of channels
- * @return NRF_SUCCESS, NRF_ERROR_NULL, NRF_ERROR_INVALID_PARAMS if cnt does not match channel cnt
- */
-//ret_code_t KD2_SetChannelLimits(KD2_target_t const* pLimits, uint8_t cnt, ds_reportHandler_t resultHandler);
-
-/** @brief function to retrieve the channel power
- *
- * @note the provided array size should be at least as high as the reported
- *       channel count at initialization
- * @param[out]    pPower the channel powers
- * @param[in/out] pSize  in: the available size, out: the number of channels
- * @return NRF_SUCCESS, NRF_ERROR_NULL, NRF_ERROR_NO_MEM if buffer is to small
- */
-//ret_code_t KD2_GetChannelPower(q6_10_t* pPower, uint8_t* pSize);
-
-/** @brief function to set new channel power
- *
- * @param[in] pPower the channel limits
- * @param[in] cnt    the number of channels
- * @return NRF_SUCCESS, NRF_ERROR_NULL, NRF_ERROR_INVALID_PARAMS if cnt does not match channel cnt
- */
-//ret_code_t KD2_SetChannelPower(q6_10_t const* pPower, uint8_t cnt, ds_reportHandler_t resultHandler);
-
-/** @brief function to retrieve the channel power
- *
- * @note the provided array size should be at least as high as the reported
- *       channel count at initialization
- * @param[out]    pPower the channel powers
- * @param[in/out] pSize  in: the available size, out: the number of channels
- * @return NRF_SUCCESS, NRF_ERROR_NULL, NRF_ERROR_NO_MEM if buffer is to small
- */
-//ret_code_t KD2_GetChannelOptics(prg_optic_t* pOptics, uint8_t* pSize);
-
-/** @brief function to set new channel power
- *
- * @param[in] pPower the channel limits
- * @param[in] cnt    the number of channels
- * @return NRF_SUCCESS, NRF_ERROR_NULL, NRF_ERROR_INVALID_PARAMS if cnt does not match channel cnt
- */
-//ret_code_t KD2_SetChannelOptics(prg_optic_t const* pOptics, uint8_t cnt, ds_reportHandler_t resultHandler);
-
 /** @brief function to get the adc compensation values
  *
  * @note currently only the current gain factor and temperature offset are

@@ -13,12 +13,14 @@
 /* Includes ------------------------------------------------------------------*/
 #include "ble_lcs.h"
 #include "ble_hps.h"
+#include "ble_hps_c.h"
 #include "nrf_section.h"
 
 /* Exported types ------------------------------------------------------------*/
 typedef enum
 {
-    BTLE_EVT_NAME_CHANGE                // event indicating that the device name was changed
+    BTLE_EVT_NAME_CHANGE,               // event indicating that the device name was changed
+    BTLE_EVT_SUPPORT_NOTIF              // event indicating that a support notification has been received
 } btle_evt_type_t;
 
 typedef struct
@@ -26,7 +28,8 @@ typedef struct
     btle_evt_type_t type;
     union
     {
-        char const* pNewDeviceName;     // the new device name for BTLE_EVT_NAME_CHANGE event
+        char const*          pNewDeviceName;// the new device name for BTLE_EVT_NAME_CHANGE event
+        ble_hps_c_s_t const* pSupport;      // the support data for BTLE_EVT_SUPPORT_NOTIF
     };
 } btle_event_t;
 
@@ -54,7 +57,7 @@ typedef struct
     uint16_t             maxDeviceNameLength;       // the maximum supported device name length, 0 is name change is not supported, max value is BLE_GAP_DEVNAME_DEFAULT_LEN (31 bytes)
     btle_info_t const*   pInfo;         // the information included into the GAP and Device Information Service
     btle_eventHandler_t  eventHandler;  // the event handler for btle events
-    ble_lcs_init_t*      pLcsInit;      // the initialization structure for the light control service
+    //ble_lcs_init_t*      pLcsInit;      // the initialization structure for the light control service
     ble_hps_init_t*      pHpsInit;      // the initialization structure for the Helen Project Service
     ble_user_mem_block_t qwrBuffer;     // the buffer for the queued write module
 } btle_init_t;
@@ -65,7 +68,7 @@ typedef struct
     uint8_t  mode;
 } btle_modeRelay_t;
 
-typedef struct
+/*typedef struct
 {
     ble_lcs_hlmt_mode_t mode;               // mode configuration, setup will always be included, intensity just if spot and/or flood are/is enabled
     ble_lcs_lm_status_flags_t statusSpot;   // status of spot, will be included if spot is enabled
@@ -75,7 +78,7 @@ typedef struct
     int8_t pitch;                           // pitch angle in °, will be included if value is in range -90..+90
     uint8_t batterySoc;                     // battery state of charge, will be included if value is in range 0..100
     uint16_t powerTaillight;                // taillight output power in mW, will be included if value > 0
-} btle_lcsMeasurement_t;
+} btle_lcsMeasurement_t;*/
 
 typedef struct
 {
@@ -146,7 +149,7 @@ ret_code_t btle_RelayMode(btle_modeRelay_t const* pRelay);
  * @return      NRF_SUCCESS, NRF_ERROR_INVALID_STATE if no notifications are to
  *              send or the propagated error of ble_lcs_light_measurement_send()
  */
-ret_code_t btle_ReportLcsMeasurements(btle_lcsMeasurement_t const* pData);
+//ret_code_t btle_ReportLcsMeasurements(btle_lcsMeasurement_t const* pData);
 
 /** @brief Function for updating light information. If a device is connected and
  *         light control service notifications are enabled a notification
@@ -158,6 +161,10 @@ ret_code_t btle_ReportLcsMeasurements(btle_lcsMeasurement_t const* pData);
  *              send or the propagated error of ble_lcs_light_measurement_send()
  */
 ret_code_t btle_ReportHpsMeasurements(btle_hpsMeasurement_t const* pData);
+
+bool btle_isHpsDevice(uint16_t connHandle);
+
+ret_code_t btle_ReportHpsSipport(ble_hps_s_t const* pData);
 
 #endif // BTLE_H_INCLUDED
 

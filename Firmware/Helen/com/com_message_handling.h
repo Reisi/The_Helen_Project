@@ -21,7 +21,7 @@
 
 /* Exported types ------------------------------------------------------------*/
 /// TODO: change battery SOC from percent in q7_9_t to q16_t or q8_t?
-typedef uint16_t q7_9_t;    // used for battery SOC in %
+typedef uint8_t q8_t;       // used for battery SOC
 typedef uint16_t q3_13_t;   // used for taillight power in W
 
 typedef enum
@@ -29,12 +29,19 @@ typedef enum
     CMH_EVENT_MODE_REQUEST,     // mode request message received, change mode and send status message!
     CMH_EVENT_RESET_REQUEST,    // reset request received, reset device!
     CMH_EVENT_STATUS_REQUEST,   // status request received, send status message!
+    //CMH_EVENT_TAILLIGHT_MSG,    // a new taillight message has been received
+    //CMH_EVENT_BATTERY_MSG,      // a new battery message has been received
 } cmh_eventType_t;
 
 typedef struct
 {
     cmh_eventType_t type;
-    uint8_t mode;               // the mode to change to for event @ref CMH_EVENT_MODE_REQUEST
+    union
+    {
+        uint8_t mode;           // the mode to change to for event @ref CMH_EVENT_MODE_REQUEST
+        //q3_13_t taillightPower; // taillight power for event @ref CMH_EVENT_TAILLIGHT_MSG
+        //q7_9_t  batterySoc;     // battery SOC for event @ref CMH_EVENT_BATTERY_MSG
+    };
 } cmh_event_t;
 
 typedef void (*cmh_eventHandler_t)(cmh_event_t const* pEvent);
@@ -101,7 +108,7 @@ ret_code_t cmh_GetTaillightPower(q3_13_t* pPower);
  *         NRF_ERROR_NOT_FOUND if no battery available
  *         NRF_ERROR_TIMEOUT if last known data is older than 30 sec
  */
-ret_code_t cmh_GetBatterySOC(q7_9_t* pSOC);
+ret_code_t cmh_GetBatterySOC(q8_t* pSOC);
 
 #endif // COM_MESSAGE_HANDLING_H_INCLUDED
 

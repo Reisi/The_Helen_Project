@@ -7,8 +7,11 @@
 
 
 #define BLE_UUID_HPS_CP_CHARACTERISTIC  0x0305  /**< The UUID of the Control Point characteristic */
+#define BLE_UUID_HPS_S_CHARACTERISTIC   0x0306  /**< The UUID of the Support characteristic */
 
 #define BLE_HPS_C_CP_CHAR_MIN_IND_LEN   3       /**< minimum length of the control point characteristic */
+
+#define BLE_HPS_C_S_CHAR_MIN_NOT_LEN    2       /**< minimum length of the support characteristic */
 
 #define BLE_HPS_C_CP_CHAR_MAX_WRITE_LEN 2
 
@@ -81,6 +84,11 @@ static void gatt_error_handler(uint32_t   nrf_error,
         ble_hps_c_evt_t evt;
         ble_hps_c_server_spec_t* p_server;
 
+        evt.data.hps_db.cp_handle = BLE_GATT_HANDLE_INVALID;
+        evt.data.hps_db.cp_cccd_handle = BLE_GATT_HANDLE_INVALID;
+        evt.data.hps_db.s_handle = BLE_GATT_HANDLE_INVALID;
+        evt.data.hps_db.s_cccd_handle = BLE_GATT_HANDLE_INVALID;
+
         evt.conn_handle = p_evt->conn_handle;
 
         // Find the Light Control Control Point characteristic
@@ -89,12 +97,21 @@ static void gatt_error_handler(uint32_t   nrf_error,
             if (p_evt->params.discovered_db.charateristics[i].characteristic.uuid.uuid ==
                 BLE_UUID_HPS_CP_CHARACTERISTIC)
             {
-                // Found HID information characteristic. Store handle and break
+                // Found control point characteristic. Store handles
                 evt.data.hps_db.cp_handle =
                     p_evt->params.discovered_db.charateristics[i].characteristic.handle_value;
                 evt.data.hps_db.cp_cccd_handle =
                     p_evt->params.discovered_db.charateristics[i].cccd_handle;
-                break;
+            }
+
+            if (p_evt->params.discovered_db.charateristics[i].characteristic.uuid.uuid ==
+                BLE_UUID_HPS_S_CHARACTERISTIC)
+            {
+                // Found feature characteristic. Store handles
+                evt.data.hps_db.s_handle =
+                    p_evt->params.discovered_db.charateristics[i].characteristic.handle_value;
+                evt.data.hps_db.s_cccd_handle =
+                    p_evt->params.discovered_db.charateristics[i].cccd_handle;
             }
         }
 
@@ -151,6 +168,78 @@ static bool decode_control_point(uint8_t const * p_data, uint16_t size, ble_hps_
     return true;
 }
 
+/** @brief function to decode the Control Point Characteristic Indication Data
+ *
+ * @param[in]  p_data raw data as provided by the softdevice
+ * @param[in]  size   data size
+ * @param[out] p_cp   Control Point Structure
+ * @return     true if a valid response received, otherwise false
+ */
+static bool decode_support(uint8_t const * p_data, uint16_t size, ble_hps_c_s_t * p_s)
+{
+    if (size < BLE_HPS_C_S_CHAR_MIN_NOT_LEN)
+    {
+        return false;
+    }
+
+    union
+    {
+        ble_hps_c_s_flags_t decoded;
+        uint16_t            raw;
+    } flags;
+
+    flags.raw = uint16_decode(p_data);
+    p_s->flags = flags.decoded;
+    p_data += 2;
+    size -= 2;
+
+    if (flags.decoded.inclination_present)
+    {
+        if (size < 2)
+        {
+            return false;
+        }
+        p_s->inclination = uint16_decode(p_data);
+        p_data += 2;
+        size -= 2;
+    }
+
+    if (flags.decoded.brake_ind_present)
+    {
+        if (size < 2)
+        {
+            return false;
+        }
+        p_s->brake_ind = uint16_decode(p_data);
+        p_data += 2;
+        size -= 2;
+    }
+
+    if (flags.decoded.left_ind_present)
+    {
+        if (size < 2)
+        {
+            return false;
+        }
+        p_s->left_ind = uint16_decode(p_data);
+        p_data += 2;
+        size -= 2;
+    }
+
+    if (flags.decoded.right_ind_present)
+    {
+        if (size < 2)
+        {
+            return false;
+        }
+        p_s->right_ind = uint16_decode(p_data);
+        p_data += 2;
+        size -= 2;
+    }
+
+    return true;
+}
+
 /**@brief     Function for handling Handle Value Notification received from the SoftDevice.
  *
  * @param[in] p_ble_hps_c  Pointer to the Helen Project Service Client structure.
@@ -185,6 +274,20 @@ static void on_hvx(ble_hps_c_t * p_ble_hps_c, const ble_evt_t * p_ble_evt)
         if (p_ble_hps_c->evt_handler &&
             decode_control_point(p_ble_evt->evt.gattc_evt.params.hvx.data,
                                  data_size, &evt.data.control_point))
+        {
+            p_ble_hps_c->evt_handler(p_ble_hps_c, &evt);
+        }
+    }
+
+    // Check if this is a Support Notification
+    if (p_ble_evt->evt.gattc_evt.params.hvx.handle == p_server->hps_db.s_handle)
+    {
+        data_size = p_ble_evt->evt.gattc_evt.params.hvx.len - 3;
+        evt.p_server = p_server;
+        evt.evt_type = BLE_HPS_C_EVT_SUPPORT_NOTIF;
+        if (p_ble_hps_c->evt_handler &&
+            decode_support(p_ble_evt->evt.gattc_evt.params.hvx.data,
+                                 data_size, &evt.data.support))
         {
             p_ble_hps_c->evt_handler(p_ble_hps_c, &evt);
         }
@@ -295,9 +398,11 @@ uint32_t ble_hps_c_init(ble_hps_c_t * p_ble_hps_c, uint8_t num_of_servers, ble_h
     m_num_of_servers = num_of_servers;
     while (num_of_servers)
     {
-        p_ble_hps_c->p_server[num_of_servers - 1].conn_handle             = BLE_CONN_HANDLE_INVALID;
+        p_ble_hps_c->p_server[num_of_servers - 1].conn_handle           = BLE_CONN_HANDLE_INVALID;
         p_ble_hps_c->p_server[num_of_servers - 1].hps_db.cp_handle      = BLE_GATT_HANDLE_INVALID;
         p_ble_hps_c->p_server[num_of_servers - 1].hps_db.cp_cccd_handle = BLE_GATT_HANDLE_INVALID;
+        p_ble_hps_c->p_server[num_of_servers - 1].hps_db.s_handle       = BLE_GATT_HANDLE_INVALID;
+        p_ble_hps_c->p_server[num_of_servers - 1].hps_db.s_cccd_handle  = BLE_GATT_HANDLE_INVALID;
         num_of_servers--;
     }
 
@@ -388,6 +493,11 @@ uint32_t ble_hps_c_cp_indic_enable(ble_hps_c_t * p_ble_hps_c, uint16_t conn_hand
         return NRF_ERROR_NOT_FOUND;
     }
 
+    if (p_server->hps_db.cp_cccd_handle == BLE_GATT_HANDLE_INVALID)
+    {
+        return NRF_ERROR_NOT_SUPPORTED;
+    }
+
     if (enable)
     {
         cccd_val = BLE_GATT_HVX_INDICATION;
@@ -398,6 +508,39 @@ uint32_t ble_hps_c_cp_indic_enable(ble_hps_c_t * p_ble_hps_c, uint16_t conn_hand
     }
 
     return cccd_configure(p_ble_hps_c, conn_handle, p_server->hps_db.cp_cccd_handle, cccd_val);
+}
+
+uint32_t ble_hps_c_s_notify_enable(ble_hps_c_t * p_ble_hps_c, uint16_t conn_handle, bool enable)
+{
+    uint16_t cccd_val;
+    ble_hps_c_server_spec_t * p_server;
+
+    if (p_ble_hps_c == NULL)
+    {
+        return NRF_ERROR_NULL;
+    }
+
+    p_server = get_server_data_by_conn_handle(conn_handle, p_ble_hps_c->p_server);
+    if (p_server == NULL)
+    {
+        return NRF_ERROR_NOT_FOUND;
+    }
+
+    if (p_server->hps_db.s_cccd_handle == BLE_GATT_HANDLE_INVALID)
+    {
+        return NRF_ERROR_NOT_SUPPORTED;
+    }
+
+    if (enable)
+    {
+        cccd_val = BLE_GATT_HVX_NOTIFICATION;
+    }
+    else
+    {
+        cccd_val = 0;
+    }
+
+    return cccd_configure(p_ble_hps_c, conn_handle, p_server->hps_db.s_cccd_handle, cccd_val);
 }
 
 uint32_t ble_hps_c_handles_assign(ble_hps_c_t *    p_ble_hps_c,

@@ -35,8 +35,8 @@
 #include "remote.h"
 #include "ble_hps.h"
 #include "ble_hps_c.h"
-#include "ble_lcs.h"
-#include "ble_lcs_c.h"
+//#include "ble_lcs.h"
+//#include "ble_lcs_c.h"
 #include "link_management.h"
 #include "version.h"
 
@@ -73,14 +73,14 @@ static void onBleEventHandler(ble_evt_t const * pBleEvt, void * pContext);
 
 /* Private variables ---------------------------------------------------------*/
 NRF_BLE_GATT_DEF(gattInst);                             // gatt instance
-BLE_LCS_DEF(lcsGattS, NRF_SDH_BLE_TOTAL_LINK_COUNT);    // light control service server
+//BLE_LCS_DEF(lcsGattS, NRF_SDH_BLE_TOTAL_LINK_COUNT);    // light control service server
 BLE_HPS_DEF(hpsGattS, NRF_SDH_BLE_TOTAL_LINK_COUNT);    // Helen Project Service server
 NRF_BLE_QWR_DEF(qwrInst);                               // The queued writes instance
 
 BLE_DB_DISCOVERY_DEF(discInst);                         // database discovery
 NRF_BLE_GQ_DEF(gattQueueInst, NRF_SDH_BLE_CENTRAL_LINK_COUNT, NRF_BLE_GQ_QUEUE_SIZE); // gatt queued writes module
 BLE_HIDS_C_DEF(hidsInst);                               // hid service client
-BLE_LCS_C_DEF(lcsGattC, NRF_SDH_BLE_TOTAL_LINK_COUNT);  // light control service client
+//BLE_LCS_C_DEF(lcsGattC, NRF_SDH_BLE_TOTAL_LINK_COUNT);  // light control service client
 BLE_HPS_C_DEF(hpsGattC, NRF_SDH_BLE_TOTAL_LINK_COUNT);  // helen project service client
 
 NRF_SDH_BLE_OBSERVER(btle_obs, BLE_BTLE_BLE_OBSERVER_PRIO, onBleEventHandler, NULL);// registering the btle event observer
@@ -193,7 +193,7 @@ static void dfrServerHandler(ble_dfu_buttonless_evt_type_t event)
 /** @brief light control service server event handler
  *  @details monitors if indications has been enabled from a peripheral connection
  */
-static void lcsServerHandler(ble_lcs_evt_t* pEvt)
+/*static void lcsServerHandler(ble_lcs_evt_t* pEvt)
 {
     if (ble_conn_state_role(pEvt->conn_handle) != BLE_GAP_ROLE_PERIPH)
         return;
@@ -221,7 +221,7 @@ static void lcsServerHandler(ble_lcs_evt_t* pEvt)
     default:
         break;
     }
-}
+}*/
 
 static bool hpsServerHandler(ble_hps_evt_t const * pEvt)
 {
@@ -277,7 +277,7 @@ static uint16_t qwrHandler(nrf_ble_qwr_t * pQwr, nrf_ble_qwr_evt_t * pEvt)
 
 /**@brief Function for initializing services that will be used by the application.
  */
-static ret_code_t gattServerInit(ble_user_mem_block_t const* pBuf, ble_hps_init_t* pHpsInit, ble_lcs_init_t* pLcsInit, btle_info_t const* pInfo)
+static ret_code_t gattServerInit(ble_user_mem_block_t const* pBuf, ble_hps_init_t* pHpsInit,/* ble_lcs_init_t* pLcsInit,*/ btle_info_t const* pInfo)
 {
     ret_code_t                errCode;
     nrf_ble_qwr_init_t        qwrInit = {0};
@@ -315,7 +315,7 @@ static ret_code_t gattServerInit(ble_user_mem_block_t const* pBuf, ble_hps_init_
     }
 
     // Initialize the lcs service
-    if (pLcsInit != NULL)
+    /*if (pLcsInit != NULL)
     {
         pLcsInit->lcs_lm_cccd_wr_sec = SEC_OPEN;
         pLcsInit->lcs_lf_rd_sec = SEC_OPEN;
@@ -334,7 +334,7 @@ static ret_code_t gattServerInit(ble_user_mem_block_t const* pBuf, ble_hps_init_
             NRF_LOG_ERROR("light control service init error %d", errCode);
             return errCode;
         }
-    }
+    }*/
 
     // Initialize the hp service
     if (pHpsInit != NULL)
@@ -362,7 +362,7 @@ static ret_code_t gattServerInit(ble_user_mem_block_t const* pBuf, ble_hps_init_
     // Initialize dfu service
     dfusInit.evt_handler = dfrServerHandler;
     errCode = ble_dfu_buttonless_init(&dfusInit);
-    if (errCode != NRF_SUCCESS)
+    if (errCode != NRF_SUCCESS && errCode != NRF_ERROR_NOT_FOUND)
     {
         NRF_LOG_ERROR("dfu service init error %d", errCode);
         return errCode;
@@ -388,7 +388,7 @@ static void dbDiscoveryHandler(ble_db_discovery_evt_t * pEvt)
     //if (pEvt->conn_handle == hidsInst.conn_handle)
     //    ble_hids_c_on_db_disc_evt(&hidsInst, pEvt);
 
-    ble_lcs_c_on_db_disc_evt(&lcsGattC, pEvt);
+    //ble_lcs_c_on_db_disc_evt(&lcsGattC, pEvt);
     ble_hps_c_on_db_disc_evt(&hpsGattC, pEvt);
 }
 
@@ -399,7 +399,7 @@ static void hidsClientErrorHandler(uint32_t errCode)
     APP_ERROR_HANDLER(errCode);
 }
 
-static void lcsClientErrorHandler(ble_lcs_c_t * pLcsC, ble_lcs_c_error_evt_t * pEvt)
+/*static void lcsClientErrorHandler(ble_lcs_c_t * pLcsC, ble_lcs_c_error_evt_t * pEvt)
 {
 
 }
@@ -418,7 +418,7 @@ static void lcsClientHandler(ble_lcs_c_t * pLcsC, ble_lcs_c_evt_t * pEvt)
         errCode = ble_lcs_c_cp_indic_enable(pLcsC, pEvt->conn_handle, true);
         APP_ERROR_CHECK(errCode);
     }
-}
+}*/
 
 static void hpsClientErrorHandler(uint32_t errCode)
 {
@@ -438,7 +438,20 @@ static void hpsClientHandler(ble_hps_c_t * pHpsC, ble_hps_c_evt_t * pEvt)
         // enable indications to be able to relay mode changes
 
         errCode = ble_hps_c_cp_indic_enable(pHpsC, pEvt->conn_handle, true);
-        APP_ERROR_CHECK(errCode);
+        if (errCode != NRF_SUCCESS && errCode != NRF_ERROR_NOT_SUPPORTED)
+            NRF_LOG_ERROR("error %d enabling control point indications", errCode);
+
+        errCode = ble_hps_c_s_notify_enable(pHpsC, pEvt->conn_handle, true);
+        if (errCode != NRF_SUCCESS && errCode != NRF_ERROR_NOT_SUPPORTED)
+            NRF_LOG_ERROR("error %d enabling support notifications", errCode);
+    }
+    else if (pEvt->evt_type == BLE_HPS_C_EVT_SUPPORT_NOTIF && pEventHandler != NULL)
+    {
+        btle_event_t evt;
+        evt.type = BTLE_EVT_SUPPORT_NOTIF;
+        evt.pSupport = &pEvt->data.support;
+
+        pEventHandler(&evt);
     }
 }
 
@@ -498,7 +511,7 @@ static ret_code_t gattClientInit()
     }
 
     // initialize lcs client
-    ble_lcs_c_init_t lcsInit = {0};
+    /*ble_lcs_c_init_t lcsInit = {0};
     lcsInit.error_handler = lcsClientErrorHandler;
     lcsInit.evt_handler = lcsClientHandler;
     lcsInit.p_gatt_queue = &gattQueueInst;
@@ -507,7 +520,7 @@ static ret_code_t gattClientInit()
     {
         NRF_LOG_ERROR("light control service client init error %d", errCode)
         return errCode;
-    }
+    }*/
 
     // initialize hps client
     ble_hps_c_init_t hpsInit = {0};
@@ -527,7 +540,7 @@ static ret_code_t gattClientInit()
 /**@brief   Function for initializing the GATT module.
  * @details The GATT module handles ATT_MTU and Data Length update procedures automatically.
  */
-static ret_code_t gattInit(ble_user_mem_block_t const * pBuf, ble_hps_init_t* pHpsInit, ble_lcs_init_t* pLcsInit, btle_info_t const* pInfo)
+static ret_code_t gattInit(ble_user_mem_block_t const * pBuf, ble_hps_init_t* pHpsInit, /*ble_lcs_init_t* pLcsInit,*/ btle_info_t const* pInfo)
 {
     ret_code_t errCode;
 
@@ -538,7 +551,7 @@ static ret_code_t gattInit(ble_user_mem_block_t const * pBuf, ble_hps_init_t* pH
         return errCode;
     }
 
-    errCode = gattServerInit(pBuf, pHpsInit, pLcsInit, pInfo);
+    errCode = gattServerInit(pBuf, pHpsInit,/* pLcsInit,*/ pInfo);
     if (errCode != NRF_SUCCESS)
         return errCode;
 
@@ -584,11 +597,11 @@ static void onConnected(lm_connEvt_t const* pConn)
     else
     {
         // start database discovery
-        errCode = ble_lcs_c_handles_assign(&lcsGattC, pConn->connHandle, NULL); /// TODO: maybe better to assign handles in discovery event in case of unexpected disconnection
+        /*errCode = ble_lcs_c_handles_assign(&lcsGattC, pConn->connHandle, NULL); /// TODO: maybe better to assign handles in discovery event in case of unexpected disconnection
         if (errCode != NRF_SUCCESS)
         {
             NRF_LOG_WARNING("lcs handle assign error %d", errCode);
-        }
+        }*/
         errCode = ble_hps_c_handles_assign(&hpsGattC, pConn->connHandle, NULL); /// TODO: maybe better to assign handles in discovery event in case of unexpected disconnection
         if (errCode != NRF_SUCCESS)
         {
@@ -626,22 +639,22 @@ static void relayMode(uint16_t connHandle, void* pContext)
 {
     uint32_t errCode;
     btle_modeRelay_t* pRelay = (btle_modeRelay_t*)pContext;
-    ble_lcs_c_cp_write_t lcsCmd;
+    //ble_lcs_c_cp_write_t lcsCmd;
     ble_hps_c_cp_write_t hpsCmd;
 
     // don't relay mode to source handle
     if (pRelay->connHandle == connHandle)
         return;
 
-    lcsCmd.command = BLE_LCS_C_CP_CMD_SET_MODE;
-    lcsCmd.params.mode_to_set = pRelay->mode;
+    //lcsCmd.command = BLE_LCS_C_CP_CMD_SET_MODE;
+    //lcsCmd.params.mode_to_set = pRelay->mode;
 
     hpsCmd.command = BLE_HPS_C_CP_CMD_SET_MODE;
     hpsCmd.params.mode_to_set = pRelay->mode;
 
     errCode = ble_hps_c_cp_write(&hpsGattC, connHandle, &hpsCmd);
-    if (errCode == NRF_ERROR_NOT_FOUND) // if helen project not available, try light control service
-        errCode = ble_lcs_c_cp_write(&lcsGattC, connHandle, &lcsCmd);
+    //if (errCode == NRF_ERROR_NOT_FOUND) // if helen project not available, try light control service
+    //    errCode = ble_lcs_c_cp_write(&lcsGattC, connHandle, &lcsCmd);
 
     if (errCode != NRF_SUCCESS && errCode != NRF_ERROR_NOT_FOUND)
     {
@@ -660,7 +673,8 @@ ret_code_t btle_Init(btle_init_t const* pInit)
     pEventHandler = pInit->eventHandler;
 
     errCode = ble_dfu_buttonless_async_svci_init();
-    if (errCode != NRF_SUCCESS)
+    if (errCode != NRF_SUCCESS &&
+        errCode != NRF_ERROR_NO_MEM)  // in case bootloader is not present
     {
         NRF_LOG_ERROR("dfu svci init error %d", errCode);
         return errCode;
@@ -674,7 +688,7 @@ ret_code_t btle_Init(btle_init_t const* pInit)
     if (errCode != NRF_SUCCESS)
         return errCode;
 
-    errCode = gattInit(&pInit->qwrBuffer, pInit->pHpsInit, pInit->pLcsInit, pInit->pInfo);
+    errCode = gattInit(&pInit->qwrBuffer, pInit->pHpsInit, /*pInit->pLcsInit,*/ pInit->pInfo);
     if (errCode != NRF_SUCCESS)
         return errCode;
 
@@ -701,7 +715,7 @@ ret_code_t btle_RelayMode(btle_modeRelay_t const* pRelay)
     return cnt ? NRF_SUCCESS : NRF_ERROR_NOT_FOUND;
 }
 
-ret_code_t btle_ReportLcsMeasurements(btle_lcsMeasurement_t const* pData)
+/*ret_code_t btle_ReportLcsMeasurements(btle_lcsMeasurement_t const* pData)
 {
     if (pData == NULL)
         return NRF_ERROR_NULL;
@@ -765,7 +779,7 @@ ret_code_t btle_ReportLcsMeasurements(btle_lcsMeasurement_t const* pData)
     }
 
     return errCode == NRF_SUCCESS ? localErrCode : errCode;
-}
+}*/
 
 ret_code_t btle_ReportHpsMeasurements(btle_hpsMeasurement_t const* pData)
 {
@@ -805,6 +819,22 @@ ret_code_t btle_ReportHpsMeasurements(btle_hpsMeasurement_t const* pData)
     }
 
     return errCode;
+}
+
+bool btle_isHpsDevice(uint16_t connHandle)
+{
+    for (uint_fast8_t i = 0; i < ARRAY_SIZE(hpsGattS_client_data); i++)
+    {
+        if (hpsGattS_client_data[i].conn_handle == connHandle)
+            return true;
+    }
+
+    return false;
+}
+
+ret_code_t btle_ReportHpsSupport(uint16_t connHandle, ble_hps_s_t const* pData)
+{
+    return ble_hps_support_send(&hpsGattS, connHandle, pData);
 }
 
 //}

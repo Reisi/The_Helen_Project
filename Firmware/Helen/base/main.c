@@ -65,7 +65,7 @@ typedef enum
 {
     FLOPSCR_NONE,   // no source
     FLOPSCR_HMI,    // flash operation request from hmi module
-    FLOPSCR_LCS,    // flash operation request from light control service
+//    FLOPSCR_LCS,    // flash operation request from light control service
 } pendingFlashOpSource_t;
 
 typedef struct
@@ -110,14 +110,19 @@ static bool app_shutdown_handler(nrf_pwr_mgmt_evt_t event)
     switch (event)
     {
         case NRF_PWR_MGMT_EVT_PREPARE_DFU:
-            NRF_LOG_INFO("Power management wants to reset to DFU mode.");
-            break;
+        case NRF_PWR_MGMT_EVT_PREPARE_RESET:
+            NRF_LOG_INFO("Power management wants to reset.");
+            return true;
 
-        default:
+        case NRF_PWR_MGMT_EVT_PREPARE_WAKEUP:
+        case NRF_PWR_MGMT_EVT_PREPARE_SYSOFF:
+            NRF_LOG_INFO("Power management wants to enter sysoff.");
+            hmi_SetLed(HMI_LT_RED, HMI_LS_OFF);
+            hmi_SetLed(HMI_LT_GREEN, HMI_LS_OFF);
+            hmi_SetLed(HMI_LT_BLUE, HMI_LS_OFF);
             return true;
     }
 
-    NRF_LOG_INFO("Power management allowed to reset to DFU mode.");
     return true;
 }
 
@@ -126,8 +131,10 @@ static bool app_shutdown_handler(nrf_pwr_mgmt_evt_t event)
  */
 NRF_PWR_MGMT_HANDLER_REGISTER(app_shutdown_handler, 0);
 
-static void softdeviceStateObserverHandler(nrf_sdh_state_evt_t state, void * p_context)
+/*static void softdeviceStateObserverHandler(nrf_sdh_state_evt_t state, void * p_context)
 {
+    NRF_LOG_INFO("state observer %d", state);
+
     if (state == NRF_SDH_EVT_STATE_DISABLED)
     {
         // Softdevice was disabled before going into reset. Inform bootloader to skip CRC on next boot.
@@ -136,15 +143,15 @@ static void softdeviceStateObserverHandler(nrf_sdh_state_evt_t state, void * p_c
         //Go to system off.
         nrf_pwr_mgmt_shutdown(NRF_PWR_MGMT_SHUTDOWN_GOTO_SYSOFF);
     }
-}
+}*/
 
 /* nrf_sdh state observer. */
-NRF_SDH_STATE_OBSERVER(softdeviceStateObserver, 0) =
+/*NRF_SDH_STATE_OBSERVER(softdeviceStateObserver, 0) =
 {
     .handler = softdeviceStateObserverHandler,
-};
+};*/
 
-void idleTimerCallback(void * pContext)
+static void idleTimerCallback(void * pContext)
 {
     (void)pContext;
 
@@ -159,6 +166,8 @@ void idleTimerCallback(void * pContext)
     LOG_ERROR_CHECK("exposure mode set error %d", errCode);
     errCode = brd_SetPowerMode(BRD_PM_STANDBY);
     LOG_ERROR_CHECK("board power mode set error %d", errCode);
+    errCode = app_timer_stop(idleTimer);
+    LOG_ERROR_CHECK("idle timer stop error %d", errCode);
 }
 
 /**@brief Function for the main module initialization.
@@ -186,13 +195,6 @@ static ret_code_t mainInit(void)
     if (retCode == NRF_SUCCESS)
         retCode = errCode;
 
-    mainState = MAINSTATE_IDLE;
-    idleCounter = IDLE_TIMEOUT / IDLE_PERIOD;
-    errCode = app_timer_start(idleTimer, IDLE_PERIOD, NULL);
-    LOG_ERROR_CHECK("starting idle timer error %d", errCode);
-    if (retCode == NRF_SUCCESS)
-        retCode = errCode;
-
     return retCode;
 }
 
@@ -210,22 +212,25 @@ static void statusLedHandling(bool limiterActive)
     lastCheck = timestamp;
 
     // in standby and off mode deactivate leds to save energy
-    if (mainState <= MAINSTATE_STANDBY)
+    /*if (mainState <= MAINSTATE_STANDBY)
     {
         hmi_SetLed(HMI_LT_RED, HMI_LS_OFF);
         hmi_SetLed(HMI_LT_GREEN, HMI_LS_OFF);
         hmi_SetLed(HMI_LT_BLUE, HMI_LS_OFF);
         return;
-    }
+    }*/
 
     // red indicates limiter status
-    ledState = limiterActive ? HMI_LS_ON : HMI_LS_OFF;
-    hmi_SetLed(HMI_LT_RED, ledState);
+    //ledState = limiterActive ? HMI_LS_ON : HMI_LS_OFF;
+    //hmi_SetLed(HMI_LT_RED, ledState);
 
     // green indicates a peripheral connection
-    /// TODO: maybe indicate advertising with blinking?
+    lm_advState_t advMode = lm_GetAdvertisingState();
     uint8_t periphCnt = lm_GetPeriphCnt();
-    ledState = periphCnt ? HMI_LS_ON : HMI_LS_OFF;
+    ledState = advMode == LM_ADV_OPEN ? HMI_LS_BLINKFAST :
+               periphCnt ? HMI_LS_ON :
+               advMode == LM_ADV_SLOW || advMode == LM_ADV_FAST ? HMI_LS_BLINKSLOW :
+               HMI_LS_OFF;
     hmi_SetLed(HMI_LT_GREEN, ledState);
 
     // blue indicates scanner and central connection
@@ -233,7 +238,7 @@ static void statusLedHandling(bool limiterActive)
     uint8_t centralCnt = lm_GetCentralCnt();
     ledState = scanMode == LM_SCAN_SEARCH ? HMI_LS_BLINKFAST :        // blink fast if search (highest priority
                centralCnt ? HMI_LS_ON :                               // on if at least one central is connected
-               scanMode == LM_SCAN_LOW_LATENCY ? HMI_LS_BLINKSLOW :   // slow blinking if searching for known devices
+               scanMode == LM_SCAN_LOW_LATENCY || scanMode == LM_SCAN_LOW_POWER ? HMI_LS_BLINKSLOW :   // slow blinking if searching for known devices
                HMI_LS_OFF;                                            // or off
     hmi_SetLed(HMI_LT_BLUE, ledState);
 }
@@ -253,7 +258,7 @@ static void main_Execute(bool limiting)
  * @param[out]    pGroups the array to be filled
  * @param[in/out] pCnt    in: the size of the provides array, out: the number of elements used
  */
-static void encodeGroupConfig(uint8_t* pGroups, uint8_t* pCnt)
+/*static void encodeGroupConfig(uint8_t* pGroups, uint8_t* pCnt)
 {
     if (pCnt == NULL)
         return;
@@ -276,7 +281,7 @@ static void encodeGroupConfig(uint8_t* pGroups, uint8_t* pCnt)
         //pMode = mm_GetModeConfig(++i);
     }
     *pCnt = j;
-}
+}*/
 
 /** @brief function to encode the helen mode configuration to bluetooth lcs config
  *
@@ -284,7 +289,7 @@ static void encodeGroupConfig(uint8_t* pGroups, uint8_t* pCnt)
  * @param[out]    pList    pointer to list, that will be filled
  * @param[in/out] pCnt     in: the size of the list, out: the number of filled elements
  */
-static void encodeModeConfig(uint8_t start, ble_lcs_hlmt_mode_t* pList, uint8_t* pCnt)
+/*static void encodeModeConfig(uint8_t start, ble_lcs_hlmt_mode_t* pList, uint8_t* pCnt)
 {
     if (pCnt == NULL)   return;
 
@@ -325,7 +330,7 @@ static void encodeModeConfig(uint8_t start, ble_lcs_hlmt_mode_t* pList, uint8_t*
         j++;
     }
     *pCnt = j;
-}
+}*/
 
 static void flashOpResultHandler(ret_code_t errCode)
 {
@@ -340,7 +345,7 @@ static void flashOpResultHandler(ret_code_t errCode)
     {
         switch (pendingFlashOp.source)
         {
-        case FLOPSCR_LCS:
+        /*case FLOPSCR_LCS:
         {
             ret_code_t errCode;
             ble_lcs_ctrlpt_rsp_t rsp = {0};
@@ -354,7 +359,7 @@ static void flashOpResultHandler(ret_code_t errCode)
                 rsp.status = BLE_LCS_CTRLPT_RSP_CODE_FAILED;
             errCode = ble_lcs_ctrlpt_mode_resp(pendingFlashOp.lcs.pLcsCtrlpt, pendingFlashOp.lcs.connHandle, &rsp);
             LOG_ERROR_CHECK("error %d sending control point response", errCode);
-        }   break;
+        }   break;*/
 
         case FLOPSCR_HMI:
             if (pendingFlashOp.hmiResponse != NULL)
@@ -369,10 +374,10 @@ static void flashOpResultHandler(ret_code_t errCode)
     }
 }
 
-static void lcsCpErrorHandler(uint32_t errCode)
+/*static void lcsCpErrorHandler(uint32_t errCode)
 {
     NRF_LOG_ERROR("lcs cp error: %d", errCode);
-}
+}*/
 
 static bool isBlockZero(void const* pBlock, unsigned int size)
 {
@@ -385,7 +390,7 @@ static bool isBlockZero(void const* pBlock, unsigned int size)
     return true;
 }
 
-static void lcsCpEventHandler(ble_lcs_ctrlpt_t * pLcsCtrlpt, ble_lcs_ctrlpt_evt_t * pEvt)
+/*static void lcsCpEventHandler(ble_lcs_ctrlpt_t * pLcsCtrlpt, ble_lcs_ctrlpt_evt_t * pEvt)
 {
     ret_code_t errCode;
     ble_lcs_ctrlpt_rsp_t rsp = {0};
@@ -540,7 +545,7 @@ static void lcsCpEventHandler(ble_lcs_ctrlpt_t * pLcsCtrlpt, ble_lcs_ctrlpt_evt_
 
     errCode = ble_lcs_ctrlpt_mode_resp(pLcsCtrlpt, pEvt->conn_handle, &rsp);
     APP_ERROR_CHECK(errCode);
-}
+}*/
 
 static bool hpsEventHandler(ble_hps_evt_t const * pEvt)
 {
@@ -601,19 +606,25 @@ static bool hpsEventHandler(ble_hps_evt_t const * pEvt)
 
 static void btleEventHandler(btle_event_t const * pEvt)
 {
+    ret_code_t errCode;
+
     if (pEvt->type == BTLE_EVT_NAME_CHANGE)
     {
         NRF_LOG_INFO("new device name received: %s", pEvt->pNewDeviceName);
 
-        ret_code_t errCode;
         errCode = brd_SetDeviceName(pEvt->pNewDeviceName, NULL);
         LOG_ERROR_CHECK("setting device name error %d", errCode);
+    }
+    else if (pEvt->type == BTLE_EVT_SUPPORT_NOTIF)
+    {
+        errCode = brd_SupportNotif(pEvt->pSupport);
+        LOG_ERROR_CHECK("error %d relaying support data", errCode);
     }
 }
 
 static ret_code_t bluetoothInit(brd_info_t const* pBrdInfo)//btle_info_t const* const pInfo, brd_features_t const* pFeatures, ble_hps_modes_init_t const* pModes)
 {
-    ble_lcs_init_t lcsInit = {0};
+    /*ble_lcs_init_t lcsInit = {0};
     lcsInit.cp_evt_handler = lcsCpEventHandler;
     lcsInit.error_handler = lcsCpErrorHandler;
     lcsInit.feature.light_type = BLE_LCS_LT_HELMET_LIGHT;
@@ -623,19 +634,19 @@ static ret_code_t bluetoothInit(brd_info_t const* pBrdInfo)//btle_info_t const* 
     lcsInit.feature.cfg_features.mode_config_supported = 1;
     lcsInit.feature.cfg_features.mode_grouping_supported = 1;
     lcsInit.feature.cfg_features.preferred_mode_supported = 1;
-    lcsInit.feature.cfg_features.temporary_mode_supported = 1;
+    lcsInit.feature.cfg_features.temporary_mode_supported = 1;*/
 
     ble_hps_init_t hpsInit = {0};
-    ble_hps_f_ch_size_t chSize[pBrdInfo->pFeatures->channelCount];
+    //ble_hps_f_ch_size_t chSize[pBrdInfo->pFeatures->channelCount];
     hpsInit.features.mode_count = MM_NUM_OF_MODES;
     hpsInit.features.channel_count = pBrdInfo->pFeatures->channelCount;
-    for (uint8_t i = 0; i < ARRAY_SIZE(chSize); i++)
+    /*for (uint8_t i = 0; i < ARRAY_SIZE(chSize); i++)
     {
         chSize[i].channel_bitsize = 8;  /// TODO this cannot be hardcoded here, it should be shifted to board specific code
         chSize[i].sp_ftr_bitsize = 3;
         chSize[i].channel_description = pBrdInfo->pFeatures->pChannelTypes[i];
-    }
-    hpsInit.features.p_channel_size = chSize;
+    }*/
+    hpsInit.features.p_channel_size = pBrdInfo->pFeatures->pChannelSize;
     hpsInit.features.flags.mode_set_supported = true;   /// TODO shift to board specific code
     hpsInit.features.flags.search_request_supported = true;
     hpsInit.features.flags.factory_reset_supported = true;
@@ -644,11 +655,11 @@ static ret_code_t bluetoothInit(brd_info_t const* pBrdInfo)//btle_info_t const* 
     hpsInit.evt_handler = hpsEventHandler;
 
     btle_init_t btleInit = {0};
-    btleInit.advType = BTLE_ADV_TYPE_AFTER_SEARCH,            /// TODO board specific and options for no button
+    btleInit.advType = pBrdInfo->pFeatures->advType;
     btleInit.maxDeviceNameLength = pBrdInfo->pFeatures->maxNameLenght;
     btleInit.pInfo = pBrdInfo->pInfo;
     btleInit.eventHandler = btleEventHandler;
-    btleInit.pLcsInit = &lcsInit;
+    //btleInit.pLcsInit = &lcsInit;
     btleInit.pHpsInit = &hpsInit;
     btleInit.qwrBuffer = pBrdInfo->qwrBuffer;
 
@@ -787,9 +798,14 @@ static void modeChanged(uint8_t newMode)
  */
 int main(void)
 {
+    //dbg_StartCycleCnt();
+    //dbg_ResetCycleCnt();
+
     ret_code_t errCode, criticalError = NRF_SUCCESS;
     brd_info_t const* pBrdInfos;
     uint8_t initMode;
+
+    //nrf_power_system_off();
 
     errCode = dbg_Init();
     APP_ERROR_CHECK(errCode);
@@ -814,6 +830,11 @@ int main(void)
     errCode = bluetoothInit(pBrdInfos);
     APP_ERROR_CHECK(errCode);
 
+    /*while(1)
+    {
+        __WFE();
+    }*/
+
     errCode = comInit(&pBrdInfos->pFeatures->comSupported);
     APP_ERROR_CHECK(errCode);
 
@@ -824,7 +845,13 @@ int main(void)
         wdg_Feed();
     }
 
-    errCode = brd_SetPowerMode(BRD_PM_IDLE);
+    mainState = MAINSTATE_STANDBY;
+    idleCounter = 0;
+
+    errCode = brd_SetPowerMode(BRD_PM_STANDBY);
+    APP_ERROR_CHECK(errCode);
+
+    errCode = lm_SetExposureMode(LM_EXP_LOW_POWER);
     APP_ERROR_CHECK(errCode);
 
     if (initMode == MM_MODE_OFF)
@@ -832,8 +859,7 @@ int main(void)
     errCode = brd_SetLightMode(initMode);
     APP_ERROR_CHECK(errCode);
 
-    errCode = lm_SetExposureMode(LM_EXP_LOW_LATENCY);
-    APP_ERROR_CHECK(errCode);
+    NRF_LOG_INFO("entering main loop");
 
     // Enter main loop.
     for (;;)
@@ -861,6 +887,8 @@ ret_code_t main_ResetIdleTimer()
     if (mainState <= MAINSTATE_STANDBY)
     {
         mainState = MAINSTATE_IDLE;
+        errCode = app_timer_start(idleTimer, IDLE_PERIOD, NULL);
+        LOG_ERROR_CHECK("starting idle timer error %d", errCode);
         NRF_LOG_INFO("going to idle mode");
         errCode = lm_SetExposureMode(LM_EXP_LOW_LATENCY);
         LOG_ERROR_CHECK("exposure mode set error %d", errCode);

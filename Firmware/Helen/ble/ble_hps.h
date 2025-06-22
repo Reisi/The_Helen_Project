@@ -41,6 +41,8 @@ typedef enum
     BLE_HPS_EVT_CP_INDICATION_DISABLED, /**< Control Point notification disabled event */
     BLE_HPS_EVT_MODE_CONFIG_CHANGED,    /**< Request to change the Mode Configuration */
     BLE_HPS_EVT_CP_WRITE,               /**< control point has been written */
+    BLE_HPS_EVT_S_NOTIVICATION_ENABLED, /**< Support notification enabled event */
+    BLE_HPS_EVT_S_NOTIVICATION_DISABLED,/**< Support notification disabled event */
 } ble_hps_evt_type_t;
 
 typedef enum
@@ -84,6 +86,7 @@ typedef struct
     uint16_t conn_handle;                       /**< Handle of the connection (as provided by the BLE stack) */
     bool is_m_notfy_enabled;                    /**< Indicator if measurement notifications are enabled */
     bool is_cp_indic_enabled;                   /**< Indicator if control point indications are enabled */
+    bool is_s_notfy_enabled;                    /**< Indicator if support notifications are enabled */
     ble_hps_cp_proc_status_t procedure_status;  /**< status of possible procedure */
     ble_hps_cp_rsp_ind_t     pending_response;  /**< pending response data */
 } ble_hps_client_spec_t;
@@ -248,7 +251,7 @@ struct ble_hps_s
     ble_gatts_char_handles_t    m_handles;          /**< Handles related to the measurement characteristic */
     ble_gatts_char_handles_t    cp_handles;         /**< Handles related to the control point characteristic */
     ble_gatts_char_handles_t    modes_handles;      /**< Handles related to the Helen Modes characteristic */
-//    ble_hps_modes_buf_t         modes;              /**< buffer and information to receive long writes for the modes characteristic */
+    ble_gatts_char_handles_t    s_handles;          /**< Handles related to the Helen Support characteristic */
     ble_hps_feature_t           features;           /**< the supported features */
     uint16_t                    modes_len;          /**> the length of the modes characteristics */
     ble_hps_evt_handler_t       evt_handler;        /**< Event handler to be called for handling events in the Helen Project Service */
@@ -262,7 +265,6 @@ typedef struct
     uint8_t output_power_present  : 1;  /**< Flag indication that the output power field is present */
     uint8_t temperature_present   : 1;  /**< Flag indication that the temperature field is present */
     uint8_t input_voltage_present : 1;  /**< Flag indication that the input voltage field is present */
-    //uint8_t soc_present           : 1;
 } ble_hps_m_flags_t;
 
 /** @brief the measurement structure */
@@ -274,6 +276,27 @@ typedef struct
     int8_t            temperature;      /**< temperature in °C */
     uint16_t          input_voltage;    /**< input voltage in mW */
 } ble_hps_m_t;
+
+/** @brief the support flags field */
+typedef struct
+{
+    uint16_t time_ref_present    : 1;   /**< Flag indication that the time reference field is present */
+    uint16_t brake_ind_present   : 1;   /**< Flag indication that the brake indication stop timestamp field is present */
+    uint16_t left_ind_present    : 1;   /**< Flag indication that the left indicator stop timestamp field is present */
+    uint16_t right_ind_present   : 1;   /**< Flag indication that the right indicator stop timestamp field is present */
+    uint16_t inclination_present : 1;   /**< Flag indication that the inclination field is present */
+} ble_hps_s_flags_t;
+
+/** @brief the support structure */
+typedef struct
+{
+    ble_hps_s_flags_t flags;            /**< Flags indicating which fields are present */
+    uint16_t          time_ref;         /**< time reference in 1/1024s */
+    uint16_t          brake_ind;        /**< brake indication stop timestamp in 1/1024s */
+    uint16_t          left_ind;         /**< left indicator stop timestamp in 1/1024s */
+    uint16_t          right_ind;        /**< right indicator stop timestamp in 1/1024s */
+    int16_t           inclination;      /**< inclination in 1/100° */
+} ble_hps_s_t;
 
 /* Exported macros ---------------------------------------------------------- */
 #define GLUE(X, Y)  X ## Y
@@ -325,6 +348,15 @@ uint16_t ble_hps_on_qwr_evt(ble_hps_t const * p_hps, nrf_ble_qwr_t * p_qwr, nrf_
  * @return NRF_SUCCESS, NRF_ERROR_NULL, NRF_ERROR_INVALID_STATE *
  */
 uint32_t ble_hps_measurement_send(ble_hps_t const * p_hps, uint16_t conn_handle, ble_hps_m_t const * p_data);
+
+/** @brief Function to send support data if notifications have been enabled
+ *
+ * @param[in] p_hps        the helen service structure
+ * @param[in] conn_handle  the connection to send the message to
+ * @param[in] p_data       the data to send
+ * @return NRF_SUCCESS, NRF_ERROR_NULL, NRF_ERROR_INVALID_STATE *
+ */
+uint32_t ble_hps_support_send(ble_hps_t const * p_hps, uint16_t conn_handle, ble_hps_s_t const * p_data);
 
 #endif /* BLE_LCS_H_INCLUDED */
 
