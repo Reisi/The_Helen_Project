@@ -1,6 +1,6 @@
 # Helen
 
-![Helen](Documentation/ing/title_logo.png)
+![Helen](Documentation/img/title_logo.png)
 
 The Helen Project is a firmware platform for bicycle lights.
 It features
